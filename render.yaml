@@ -7,9 +7,7 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: ticket-beacon-db
-          property: connectionString
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: ALGORITHM
@@ -26,8 +24,3 @@ services:
         value: https://ticket-beacon.vercel.app
       - key: ALLOWED_ORIGINS
         value: https://ticket-beacon.vercel.app
-
-databases:
-  - name: ticket-beacon-db
-    databaseName: ticket_beacon
-    plan: free
