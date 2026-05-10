@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+!.env.example
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Electron build output
+release/
+out/
+
+# Python virtual environment
+backend/.venv/
+
+# Android build output
+android/.gradle/
+android/app/build/
+android/build/
+
+# Env files (keep example, ignore actual)
+.env.production
+.env.local

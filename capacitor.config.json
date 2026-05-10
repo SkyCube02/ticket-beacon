@@ -1,0 +1,8 @@
+{
+  "appId": "com.simbix.ticketbeacon",
+  "appName": "Ticket Beacon",
+  "webDir": "dist",
+  "server": {
+    "cleartext": false
+  }
+}

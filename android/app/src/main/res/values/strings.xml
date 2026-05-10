@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ticket Beacon</string>
+    <string name="title_activity_main">Ticket Beacon</string>
+    <string name="package_name">com.simbix.ticketbeacon</string>
+    <string name="custom_url_scheme">com.simbix.ticketbeacon</string>
+</resources>
