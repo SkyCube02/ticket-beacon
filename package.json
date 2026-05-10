@@ -70,7 +70,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "simbix",
+      "owner": "SkyCube02",
       "repo": "ticket-beacon"
     }
   }

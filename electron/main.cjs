@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Notification, shell, dialog } = require('electron');
 const path = require('path');
 
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = !app.isPackaged;
 
 // ── Emergency contact cache (in-memory, persisted via renderer localStorage) ──
 // Removed better-sqlite3 dependency — localStorage handles persistence in renderer
@@ -56,7 +56,7 @@ function createWindow() {
   if (isDev) {
     win.loadURL('http://localhost:5173');
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    win.loadURL('https://ticket-beacon.vercel.app');
   }
 
   win.once('ready-to-show', () => {
