@@ -169,17 +169,6 @@ function LoginForm({ portal, onLogin, onBack }) {
     }
   }
 
-  // Handle redirect result on mount (after Microsoft redirects back)
-  useEffect(() => {
-    if (!azureClientId) return;
-    getMsal().then(msalApp => {
-      msalApp.handleRedirectPromise().then(result => {
-        if (!result) return;
-        api.azureLogin(result.accessToken).then(data => finishLogin(data)).catch(err => setError(err.message));
-      }).catch(err => setError(err.message));
-    }).catch(() => {});
-  }, []);
-
   async function handleAzureLogin() {
     if (!azureClientId) return;
     setError('');
@@ -364,6 +353,23 @@ export default function LoginScreen({ onLogin }) {
   const [brandVisible, setBrandVisible] = useState(false);
 
   useEffect(() => { setTimeout(() => setBrandVisible(true), 100); }, []);
+
+  // Handle Microsoft redirect result at the top level — runs regardless of which portal is selected
+  useEffect(() => {
+    if (!AZURE_CLIENT_ID) return;
+    getMsal().then(msalApp => {
+      msalApp.handleRedirectPromise().then(async result => {
+        if (!result) return;
+        try {
+          const data = await api.azureLogin(result.accessToken);
+          localStorage.setItem('tb_token', data.access_token);
+          onLogin(data.user);
+        } catch (err) {
+          console.error('Azure login failed:', err.message);
+        }
+      }).catch(err => console.error('MSAL redirect error:', err.message));
+    }).catch(() => {});
+  }, []);
 
   if (portal) {
     return (
