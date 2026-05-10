@@ -3,6 +3,25 @@ import { C } from '../constants/theme.js';
 import { api } from '../utils/api.js';
 import heroImg from '../assets/hero.png';
 
+const AZURE_CLIENT_ID = import.meta.env.VITE_AZURE_CLIENT_ID || '';
+const AZURE_TENANT_ID = import.meta.env.VITE_AZURE_TENANT_ID || 'common';
+
+let _msalApp = null;
+async function getMsal() {
+  if (_msalApp) return _msalApp;
+  const { PublicClientApplication } = await import('@azure/msal-browser');
+  _msalApp = new PublicClientApplication({
+    auth: {
+      clientId: AZURE_CLIENT_ID,
+      authority: `https://login.microsoftonline.com/${AZURE_TENANT_ID}`,
+      redirectUri: window.location.origin,
+    },
+    cache: { cacheLocation: 'localStorage' },
+  });
+  await _msalApp.initialize();
+  return _msalApp;
+}
+
 const CLIENT_ROLES = ['CLIENT_USER', 'CLIENT_MANAGER'];
 
 function useIsMobile() {
@@ -108,7 +127,7 @@ function LoginForm({ portal, onLogin, onBack }) {
   const accentColor = isAgent ? C.accent : '#7c3aed';
   const accentDim   = isAgent ? C.accentDim : '#2e1065';
   const accentLight = isAgent ? C.accentLight : '#c084fc';
-  const azureClientId = import.meta.env.VITE_AZURE_CLIENT_ID || '';
+  const azureClientId = AZURE_CLIENT_ID;
 
   function finishLogin(data) {
     const isClient = CLIENT_ROLES.includes(data.user.role);
@@ -150,24 +169,25 @@ function LoginForm({ portal, onLogin, onBack }) {
     }
   }
 
+  // Handle redirect result on mount (after Microsoft redirects back)
+  useEffect(() => {
+    if (!azureClientId) return;
+    getMsal().then(msalApp => {
+      msalApp.handleRedirectPromise().then(result => {
+        if (!result) return;
+        api.azureLogin(result.accessToken).then(data => finishLogin(data)).catch(err => setError(err.message));
+      }).catch(err => setError(err.message));
+    }).catch(() => {});
+  }, []);
+
   async function handleAzureLogin() {
     if (!azureClientId) return;
     setError('');
     setLoading(true);
     try {
-      const { PublicClientApplication } = await import('@azure/msal-browser');
-      const msalApp = new PublicClientApplication({
-        auth: {
-          clientId: azureClientId,
-          authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AZURE_TENANT_ID || 'common'}`,
-          redirectUri: window.location.origin,
-        },
-        cache: { cacheLocation: 'sessionStorage' },
-      });
-      await msalApp.initialize();
-      const result = await msalApp.loginPopup({ scopes: ['User.Read'] });
-      const data = await api.azureLogin(result.accessToken);
-      finishLogin(data);
+      const msalApp = await getMsal();
+      await msalApp.loginRedirect({ scopes: ['User.Read'] });
+      // Page will redirect — execution stops here
     } catch (err) {
       setError(err.message || 'Microsoft login failed');
       setLoading(false);

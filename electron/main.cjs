@@ -68,6 +68,10 @@ function createWindow() {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
+    // Allow Microsoft login popups for MSAL
+    if (url === 'about:blank' || url.startsWith('https://login.microsoftonline.com') || url.startsWith('https://login.live.com')) {
+      return { action: 'allow' };
+    }
     shell.openExternal(url);
     return { action: 'deny' };
   });
