@@ -110,11 +110,11 @@ function ParticleCanvas() {
 
 // ── Login form ────────────────────────────────────────────────────────────────
 
-function LoginForm({ portal, onLogin, onBack }) {
+function LoginForm({ portal, onLogin, onBack, initialError = '' }) {
   const isMobile = useIsMobile();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
   const [mfaStep, setMfaStep] = useState(false);
@@ -351,10 +351,11 @@ export default function LoginScreen({ onLogin }) {
   const isMobile = useIsMobile();
   const [portal, setPortal] = useState(null);
   const [brandVisible, setBrandVisible] = useState(false);
+  const [azureError, setAzureError] = useState('');
 
   useEffect(() => { setTimeout(() => setBrandVisible(true), 100); }, []);
 
-  // Handle Microsoft redirect result at the top level — runs regardless of which portal is selected
+  // Handle Microsoft redirect result at the top level
   useEffect(() => {
     if (!AZURE_CLIENT_ID) return;
     getMsal().then(msalApp => {
@@ -365,18 +366,23 @@ export default function LoginScreen({ onLogin }) {
           localStorage.setItem('tb_token', data.access_token);
           onLogin(data.user);
         } catch (err) {
-          console.error('Azure login failed:', err.message);
+          setAzureError('Microsoft login failed: ' + err.message);
+          setPortal('agent');
         }
-      }).catch(err => console.error('MSAL redirect error:', err.message));
+      }).catch(err => {
+        setAzureError('Microsoft auth error: ' + err.message);
+        setPortal('agent');
+      });
     }).catch(() => {});
   }, []);
 
   if (portal) {
     return (
+
       <div style={{ height: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
         <ParticleCanvas />
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <LoginForm portal={portal} onLogin={onLogin} onBack={() => setPortal(null)} />
+          <LoginForm portal={portal} onLogin={onLogin} onBack={() => setPortal(null)} initialError={azureError} />
         </div>
       </div>
     );
