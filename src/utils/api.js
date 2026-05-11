@@ -162,6 +162,8 @@ const _realApi = {
   disable2fa: (totp_code) => req('POST', '/auth/2fa/disable', { totp_code }),
   verifyMfa: (mfa_token, totp_code) => req('POST', '/auth/2fa/verify', { mfa_token, totp_code }),
   azureLogin: (access_token) => req('POST', '/auth/azure', { access_token }),
+  azureCodeLogin: (code, code_verifier, redirect_uri) =>
+    req('POST', '/auth/azure-code', { code, code_verifier, redirect_uri }),
 
   // Users extras
   inviteUser: (userId) => req('POST', `/users/${userId}/invite`),

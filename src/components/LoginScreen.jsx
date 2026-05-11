@@ -6,20 +6,31 @@ import heroImg from '../assets/hero.png';
 const AZURE_CLIENT_ID = import.meta.env.VITE_AZURE_CLIENT_ID || '';
 const AZURE_TENANT_ID = import.meta.env.VITE_AZURE_TENANT_ID || 'common';
 
-let _msalApp = null;
-async function getMsal() {
-  if (_msalApp) return _msalApp;
-  const { PublicClientApplication } = await import('@azure/msal-browser');
-  _msalApp = new PublicClientApplication({
-    auth: {
-      clientId: AZURE_CLIENT_ID,
-      authority: `https://login.microsoftonline.com/${AZURE_TENANT_ID}`,
-      redirectUri: window.location.origin,
-    },
-    cache: { cacheLocation: 'localStorage' },
+// ── Manual PKCE OAuth helpers (no MSAL dependency) ───────────────────────────
+async function pkceChallenge() {
+  const verifier = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = btoa(String.fromCharCode(...new Uint8Array(hash)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  return { verifier, challenge };
+}
+
+function startAzureRedirect() {
+  pkceChallenge().then(({ verifier, challenge }) => {
+    sessionStorage.setItem('az_verifier', verifier);
+    const params = new URLSearchParams({
+      client_id: AZURE_CLIENT_ID,
+      response_type: 'code',
+      redirect_uri: window.location.origin,
+      scope: 'openid profile email User.Read',
+      response_mode: 'fragment',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+    });
+    window.location.href =
+      `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize?${params}`;
   });
-  await _msalApp.initialize();
-  return _msalApp;
 }
 
 const CLIENT_ROLES = ['CLIENT_USER', 'CLIENT_MANAGER'];
@@ -169,18 +180,10 @@ function LoginForm({ portal, onLogin, onBack, initialError = '' }) {
     }
   }
 
-  async function handleAzureLogin() {
+  function handleAzureLogin() {
     if (!azureClientId) return;
-    setError('');
     setLoading(true);
-    try {
-      const msalApp = await getMsal();
-      await msalApp.loginRedirect({ scopes: ['User.Read'] });
-      // Page will redirect — execution stops here
-    } catch (err) {
-      setError(err.message || 'Microsoft login failed');
-      setLoading(false);
-    }
+    startAzureRedirect(); // page will navigate away
   }
 
   const inputStyle = {
@@ -355,25 +358,28 @@ export default function LoginScreen({ onLogin }) {
 
   useEffect(() => { setTimeout(() => setBrandVisible(true), 100); }, []);
 
-  // Handle Microsoft redirect result at the top level
+  // Handle Microsoft redirect result — parse code from URL hash
   useEffect(() => {
     if (!AZURE_CLIENT_ID) return;
-    getMsal().then(msalApp => {
-      msalApp.handleRedirectPromise().then(async result => {
-        if (!result) return;
-        try {
-          const data = await api.azureLogin(result.accessToken);
-          localStorage.setItem('tb_token', data.access_token);
-          onLogin(data.user);
-        } catch (err) {
-          setAzureError('Microsoft login failed: ' + err.message);
-          setPortal('agent');
-        }
-      }).catch(err => {
-        setAzureError('Microsoft auth error: ' + err.message);
+    const hash = window.location.hash.slice(1);
+    const params = new URLSearchParams(hash);
+    const code = params.get('code');
+    const verifier = sessionStorage.getItem('az_verifier');
+    if (!code || !verifier) return;
+
+    // Clear the code from URL immediately
+    window.history.replaceState({}, '', window.location.pathname);
+    sessionStorage.removeItem('az_verifier');
+
+    api.azureCodeLogin(code, verifier, window.location.origin)
+      .then(data => {
+        localStorage.setItem('tb_token', data.access_token);
+        onLogin(data.user);
+      })
+      .catch(err => {
+        setAzureError('Microsoft login failed: ' + err.message);
         setPortal('agent');
       });
-    }).catch(() => {});
   }, []);
 
   if (portal) {

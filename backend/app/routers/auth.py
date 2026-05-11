@@ -281,19 +281,11 @@ def verify_2fa(body: VerifyMfaBody, db: Session = Depends(get_db)):
 
 # ── Azure AD SSO ──────────────────────────────────────────────────────────────
 
-class AzureLoginBody(BaseModel):
-    access_token: str
-
-
-@router.post("/azure")
-async def azure_login(body: AzureLoginBody, db: Session = Depends(get_db)):
-    if not settings.AZURE_CLIENT_ID:
-        raise HTTPException(status_code=503, detail="Azure AD SSO is not configured on this server.")
-
+async def _azure_user_login(access_token: str, db) -> dict:
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             "https://graph.microsoft.com/v1.0/me",
-            headers={"Authorization": f"Bearer {body.access_token}"},
+            headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
         )
     if resp.status_code != 200:
@@ -309,11 +301,9 @@ async def azure_login(body: AzureLoginBody, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
         user = models.User(
-            email=email,
-            full_name=full_name,
+            email=email, full_name=full_name,
             password_hash=hash_password(secrets.token_urlsafe(32)),
-            role="AGENT",
-            is_activated=True,
+            role="AGENT", is_activated=True,
         )
         db.add(user)
         db.commit()
@@ -324,3 +314,48 @@ async def azure_login(body: AzureLoginBody, db: Session = Depends(get_db)):
 
     token = create_access_token({"sub": user.id})
     return {"access_token": token, "token_type": "bearer", "user": _user_out(user)}
+
+
+class AzureLoginBody(BaseModel):
+    access_token: str
+
+
+@router.post("/azure")
+async def azure_login(body: AzureLoginBody, db: Session = Depends(get_db)):
+    if not settings.AZURE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Azure AD SSO is not configured on this server.")
+    return await _azure_user_login(body.access_token, db)
+
+
+class AzureCodeBody(BaseModel):
+    code: str
+    code_verifier: str
+    redirect_uri: str
+
+
+@router.post("/azure-code")
+async def azure_code_login(body: AzureCodeBody, db: Session = Depends(get_db)):
+    if not settings.AZURE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Azure AD SSO is not configured on this server.")
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            f"https://login.microsoftonline.com/{settings.AZURE_TENANT_ID}/oauth2/v2.0/token",
+            data={
+                "client_id": settings.AZURE_CLIENT_ID,
+                "grant_type": "authorization_code",
+                "code": body.code,
+                "redirect_uri": body.redirect_uri,
+                "code_verifier": body.code_verifier,
+                "scope": "openid profile email User.Read",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=15,
+        )
+
+    if token_resp.status_code != 200:
+        detail = token_resp.json().get("error_description", "Token exchange failed")
+        raise HTTPException(status_code=401, detail=detail)
+
+    access_token = token_resp.json().get("access_token")
+    return await _azure_user_login(access_token, db)
