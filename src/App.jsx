@@ -17,7 +17,7 @@ class ViewWrap extends Component {
     return this.props.children;
   }
 }
-import { C } from './constants/theme.js';
+import { C, applyTheme } from './constants/theme.js';
 import { api } from './utils/api.js';
 import { useToast } from './utils/toast.jsx';
 import Sidebar from './components/Sidebar.jsx';
@@ -35,9 +35,98 @@ import ClientDashboard from './components/ClientDashboard.jsx';
 import TaskBoard from './components/TaskBoard.jsx';
 import OnboardingWizard from './components/OnboardingWizard.jsx';
 import ActivatePage from './components/ActivatePage.jsx';
+import Dashboard from './components/Dashboard.jsx';
+import ActiveTicketPanel from './components/ActiveTicketPanel.jsx';
 import { loadPrefs } from './utils/preferences.js';
 
 const CLIENT_ROLES = ['CLIENT_USER', 'CLIENT_MANAGER'];
+
+function MfaReenrolmentGate({ user, onDone, onLogout }) {
+  const toast = useToast();
+  const [step, setStep] = useState('prompt'); // prompt | setup | verify
+  const [setupData, setSetupData] = useState(null);
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const deadline = user.mfa_reenrol_deadline ? new Date(user.mfa_reenrol_deadline) : null;
+  const hoursLeft = deadline ? Math.max(0, (deadline - Date.now()) / 3600000) : 0;
+
+  async function handleSetup() {
+    setLoading(true);
+    try {
+      const data = await api.setup2fa();
+      setSetupData(data);
+      setStep('verify');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setLoading(false); }
+  }
+
+  async function handleEnable() {
+    setLoading(true);
+    try {
+      await api.enable2fa(code);
+      const updated = await api.me();
+      toast('2FA re-enrolled — your account is restored', 'success');
+      onDone(updated);
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ height: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: C.surface, border: `1px solid #b45309`, borderRadius: 16, width: 460, padding: 36 }}>
+        <div style={{ fontSize: 28, textAlign: 'center', marginBottom: 12 }}>⚠</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: C.text, textAlign: 'center', marginBottom: 8 }}>
+          Two-Factor Authentication Required
+        </div>
+        <div style={{ fontSize: 13, color: C.muted, textAlign: 'center', lineHeight: 1.6, marginBottom: 20 }}>
+          Your 2FA was reset via an override code. You must re-enrol before you can access Beacon.
+          {deadline && (
+            <div style={{ marginTop: 8, color: hoursLeft < 2 ? '#f87171' : '#fbbf24', fontWeight: 600 }}>
+              {hoursLeft < 1
+                ? `Account will be locked in ${Math.ceil(hoursLeft * 60)} minutes.`
+                : `${Math.ceil(hoursLeft)} hours remaining.`}
+            </div>
+          )}
+        </div>
+
+        {step === 'prompt' && (
+          <button onClick={handleSetup} disabled={loading} style={{ width: '100%', padding: '11px', background: C.accent, border: 'none', borderRadius: 8, color: C.white, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            {loading ? 'Loading…' : 'Set up authenticator app →'}
+          </button>
+        )}
+
+        {step === 'verify' && setupData && (
+          <div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, textAlign: 'center' }}>
+              Scan this QR code with Google Authenticator, Authy, or any TOTP app.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(setupData.uri)}`}
+                alt="TOTP QR code" width={140} height={140}
+                style={{ borderRadius: 8, border: `1px solid ${C.border}` }}
+              />
+            </div>
+            <input
+              autoFocus maxLength={6} inputMode="numeric" value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
+              placeholder="Enter 6-digit code to confirm"
+              style={{ width: '100%', background: C.card, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px', color: C.text, fontSize: 20, textAlign: 'center', letterSpacing: 6, outline: 'none', boxSizing: 'border-box', marginBottom: 12 }}
+            />
+            <button onClick={handleEnable} disabled={loading || code.length !== 6} style={{ width: '100%', padding: '11px', background: code.length === 6 ? C.accent : C.accentDim, border: 'none', borderRadius: 8, color: C.white, fontSize: 14, fontWeight: 600, cursor: code.length === 6 ? 'pointer' : 'default' }}>
+              {loading ? 'Verifying…' : 'Confirm & restore access'}
+            </button>
+          </div>
+        )}
+
+        <button onClick={onLogout} style={{ width: '100%', marginTop: 14, padding: '8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.dim, fontSize: 12, cursor: 'pointer' }}>
+          Log out
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function useAuth() {
   const [user, setUser] = useState(null);
@@ -83,6 +172,15 @@ export default function App() {
   const [agents, setAgents] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [activeTicketId, setActiveTicketId] = useState(() => localStorage.getItem('tb_active_ticket') || null);
+  const [showActivePanel, setShowActivePanel] = useState(false);
+  const [themeKey, setThemeKey] = useState(0);
+
+  function pinActiveTicket(id) {
+    if (id) localStorage.setItem('tb_active_ticket', id);
+    else localStorage.removeItem('tb_active_ticket');
+    setActiveTicketId(id);
+  }
   const [statusFilter, setStatusFilter] = useState(null);
   const [companyFilter, setCompanyFilter] = useState(null);
   const [search, setSearch] = useState('');
@@ -115,7 +213,7 @@ export default function App() {
     if (!user) return;
     const loaded = loadPrefs(user.id);
     setPrefs(loaded);
-    setView(loaded.defaultView || 'tickets');
+    setView(loaded.defaultView || 'dashboard');
     fetchTickets();
     api.listAgents().then(setAgents).catch(() => {});
     api.listCompanies().then(setCompanies).catch(() => {});
@@ -246,7 +344,10 @@ export default function App() {
   }
 
   function handleLogout() {
+    const refresh = localStorage.getItem('tb_refresh_token');
+    if (refresh) api.logout(refresh).catch(() => {});
     localStorage.removeItem('tb_token');
+    localStorage.removeItem('tb_refresh_token');
     setUser(null);
     setTickets([]);
     setSelectedId(null);
@@ -269,12 +370,19 @@ export default function App() {
     return <LoginScreen onLogin={u => { setUser(u); }} />;
   }
 
+  if (user.mfa_restricted) {
+    return <MfaReenrolmentGate user={user} onDone={updated => setUser(updated)} onLogout={handleLogout} />;
+  }
+
   if (CLIENT_ROLES.includes(user.role)) {
     return (
       <ClientDashboard
         user={user}
         onLogout={() => {
+          const refresh = localStorage.getItem('tb_refresh_token');
+          if (refresh) api.logout(refresh).catch(() => {});
           localStorage.removeItem('tb_token');
+          localStorage.removeItem('tb_refresh_token');
           setUser(null);
         }}
       />
@@ -306,10 +414,14 @@ export default function App() {
         view={view}
         onViewChange={setView}
         hasSecurityAlert={hasSecurityAlert}
+        activeTicket={tickets.find(t => t.id === activeTicketId) || null}
+        onOpenActiveTicket={() => setShowActivePanel(true)}
       />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {view === 'kb' ? (
+        {view === 'dashboard' ? (
+          <ViewWrap><Dashboard user={user} onNav={(v, id) => { setView(v); if (id) setSelectedId(id); }} /></ViewWrap>
+        ) : view === 'kb' ? (
           <ViewWrap><KnowledgeBase currentUser={user} /></ViewWrap>
         ) : view === 'reports' ? (
           <ViewWrap><ReportsDashboard /></ViewWrap>
@@ -323,6 +435,7 @@ export default function App() {
             prefs={prefs}
             onPrefsChange={setPrefs}
             onUserUpdate={updated => setUser(updated)}
+            onThemeChange={name => { applyTheme(name); setThemeKey(k => k + 1); }}
           /></ViewWrap>
         ) : view === 'admin' ? (
           <ViewWrap><AccountManagement currentUser={user} /></ViewWrap>
@@ -355,11 +468,27 @@ export default function App() {
                 onUpdate={changes => handleUpdateTicket(selectedTicket.id, changes)}
                 onRefresh={updated => setTickets(prev => prev.map(t => t.id === updated.id ? updated : t))}
                 onLog={(actor, action, meta, isInternal) => handleAddLog(selectedTicket.id, actor, action, meta, isInternal)}
+                isActive={activeTicketId === selectedTicket?.id}
+                onSetActive={() => pinActiveTicket(activeTicketId === selectedTicket?.id ? null : selectedTicket?.id)}
               />
             )}
           </>
         )}
       </div>
+
+      {showActivePanel && activeTicketId && (
+        <ActiveTicketPanel
+          ticket={tickets.find(t => t.id === activeTicketId)}
+          agents={agents}
+          currentUser={user}
+          onClose={() => setShowActivePanel(false)}
+          onUnpin={() => { pinActiveTicket(null); setShowActivePanel(false); }}
+          onUpdate={changes => handleUpdateTicket(activeTicketId, changes)}
+          onRefresh={updated => setTickets(prev => prev.map(t => t.id === updated.id ? updated : t))}
+          onLog={(actor, action, meta, isInternal) => handleAddLog(activeTicketId, actor, action, meta, isInternal)}
+          onOpenFull={() => { setShowActivePanel(false); setSelectedId(activeTicketId); setView('tickets'); }}
+        />
+      )}
 
       {showNew && (
         <NewTicketModal

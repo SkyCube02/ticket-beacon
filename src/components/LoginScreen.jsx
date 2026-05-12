@@ -131,6 +131,8 @@ function LoginForm({ portal, onLogin, onBack, initialError = '' }) {
   const [mfaStep, setMfaStep] = useState(false);
   const [mfaToken, setMfaToken] = useState('');
   const [totpCode, setTotpCode] = useState('');
+  const [useOverride, setUseOverride] = useState(false);
+  const [overrideCode, setOverrideCode] = useState('');
 
   useEffect(() => { setTimeout(() => setVisible(true), 30); }, []);
 
@@ -145,6 +147,7 @@ function LoginForm({ portal, onLogin, onBack, initialError = '' }) {
     if (isAgent && isClient) { setError('This account belongs to the Client Portal. Please use Client Login.'); setLoading(false); return; }
     if (!isAgent && !isClient) { setError('This account belongs to the Agent Portal. Please use Agent Login.'); setLoading(false); return; }
     localStorage.setItem('tb_token', data.access_token);
+    if (data.refresh_token) localStorage.setItem('tb_refresh_token', data.refresh_token);
     onLogin(data.user);
   }
 
@@ -172,7 +175,9 @@ function LoginForm({ portal, onLogin, onBack, initialError = '' }) {
     setError('');
     setLoading(true);
     try {
-      const data = await api.verifyMfa(mfaToken, totpCode);
+      const data = useOverride
+        ? await api.verifyMfaOverride(mfaToken, overrideCode)
+        : await api.verifyMfa(mfaToken, totpCode);
       finishLogin(data);
     } catch (err) {
       setError(err.message);
@@ -213,7 +218,7 @@ function LoginForm({ portal, onLogin, onBack, initialError = '' }) {
         {isAgent ? 'Agent Portal' : 'Client Portal'}
       </div>
       <div style={{ fontSize: 19, fontWeight: 700, color: C.text, marginTop: 3 }}>
-        <span style={{ color: accentColor }}>●</span> Ticket Beacon
+        <span style={{ color: accentColor }}>●</span> Beacon
       </div>
     </div>
   );
@@ -231,30 +236,56 @@ function LoginForm({ portal, onLogin, onBack, initialError = '' }) {
   );
 
   // MFA step
-  if (mfaStep) return (
-    <div style={cardStyle}>
-      {header}
-      <form onSubmit={handleMfaSubmit} style={{ padding: '20px 24px' }}>
-        <div style={{ fontSize: 13, color: C.muted, marginBottom: 18, lineHeight: 1.5 }}>
-          Enter the 6-digit code from your authenticator app.
-        </div>
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.5 }}>Authenticator Code</label>
-          <input type="text" required autoFocus maxLength={6} inputMode="numeric" value={totpCode}
-            onChange={e => setTotpCode(e.target.value.replace(/\D/g, ''))}
-            placeholder="000000" style={{ ...inputStyle, fontSize: 22, letterSpacing: 6, textAlign: 'center' }} />
-        </div>
-        {errorBox}
-        <button type="submit" disabled={loading || totpCode.length !== 6} style={{
-          width: '100%', padding: '11px', background: totpCode.length === 6 && !loading ? accentColor : accentDim,
-          border: 'none', borderRadius: 6, color: C.white, fontSize: 15, fontWeight: 600,
-          cursor: totpCode.length === 6 && !loading ? 'pointer' : 'default',
-        }}>
-          {loading ? 'Verifying…' : 'Verify'}
-        </button>
-      </form>
-    </div>
-  );
+  if (mfaStep) {
+    const canSubmit = useOverride ? overrideCode.trim().length > 0 : totpCode.length === 6;
+    return (
+      <div style={cardStyle}>
+        {header}
+        <form onSubmit={handleMfaSubmit} style={{ padding: '20px 24px' }}>
+          {!useOverride ? (
+            <>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 18, lineHeight: 1.5 }}>
+                Enter the 6-digit code from your authenticator app.
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.5 }}>Authenticator Code</label>
+                <input type="text" autoFocus maxLength={6} inputMode="numeric" value={totpCode}
+                  onChange={e => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="000000" style={{ ...inputStyle, fontSize: 22, letterSpacing: 6, textAlign: 'center' }} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 18, lineHeight: 1.5 }}>
+                Enter the override code provided by your System Admin. It expires 30 minutes after it was generated.
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.5 }}>Override Code</label>
+                <input type="text" autoFocus value={overrideCode}
+                  onChange={e => setOverrideCode(e.target.value)}
+                  placeholder="Paste override code here" style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 13 }} />
+              </div>
+            </>
+          )}
+          {errorBox}
+          <button type="submit" disabled={loading || !canSubmit} style={{
+            width: '100%', padding: '11px', background: canSubmit && !loading ? accentColor : accentDim,
+            border: 'none', borderRadius: 6, color: C.white, fontSize: 15, fontWeight: 600,
+            cursor: canSubmit && !loading ? 'pointer' : 'default', marginBottom: 12,
+          }}>
+            {loading ? 'Verifying…' : 'Verify'}
+          </button>
+          <button type="button" onClick={() => { setUseOverride(v => !v); setError(''); }} style={{
+            width: '100%', padding: '8px', background: 'transparent',
+            border: `1px solid ${C.border}`, borderRadius: 6,
+            color: C.dim, fontSize: 12, cursor: 'pointer',
+          }}>
+            {useOverride ? '← Back to authenticator code' : 'Lost access to authenticator app?'}
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div style={cardStyle}>
@@ -374,6 +405,7 @@ export default function LoginScreen({ onLogin }) {
     api.azureCodeLogin(code, verifier, window.location.origin)
       .then(data => {
         localStorage.setItem('tb_token', data.access_token);
+        if (data.refresh_token) localStorage.setItem('tb_refresh_token', data.refresh_token);
         onLogin(data.user);
       })
       .catch(err => {
@@ -420,7 +452,7 @@ export default function LoginScreen({ onLogin }) {
             transition: 'opacity 0.5s ease, transform 0.5s ease',
           }}>
             <div style={{ fontSize: isMobile ? 24 : 28, fontWeight: 700, color: C.text, letterSpacing: -0.5 }}>
-              <span style={{ color: C.accent, display: 'inline-block', animation: 'tb-pulse 2.4s ease-in-out infinite' }}>●</span> Ticket Beacon
+              <span style={{ color: C.accent, display: 'inline-block', animation: 'tb-pulse 2.4s ease-in-out infinite' }}>●</span> Beacon
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 6, letterSpacing: 0.6 }}>
               SELECT YOUR PORTAL

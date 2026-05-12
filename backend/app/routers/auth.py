@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..auth import (
-    create_access_token, get_current_user, hash_password, verify_password,
+    create_access_token, create_refresh_token, get_current_user, hash_password, verify_password,
 )
 from ..config import settings
 from ..database import get_db
@@ -41,6 +41,25 @@ def _password_errors(password: str) -> list:
     return errors
 
 
+def _password_pwned(password: str) -> bool:
+    sha1 = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+    prefix, suffix = sha1[:5], sha1[5:]
+    try:
+        resp = httpx.get(
+            f"https://api.pwnedpasswords.com/range/{prefix}",
+            headers={"Add-Padding": "true"},
+            timeout=3.0,
+        )
+        resp.raise_for_status()
+        for line in resp.text.splitlines():
+            h, count = line.split(":")
+            if h == suffix and int(count) > 0:
+                return True
+    except Exception:
+        pass  # fail open — don't block login if HIBP is unreachable
+    return False
+
+
 def _user_out(user: models.User) -> dict:
     company = user.companies[0] if user.companies else None
     return {
@@ -49,6 +68,9 @@ def _user_out(user: models.User) -> dict:
         "full_name": user.full_name,
         "role": user.role,
         "mfa_enabled": user.mfa_enabled,
+        "mfa_restricted": user.mfa_restricted,
+        "mfa_reenrol_deadline": user.mfa_reenrol_deadline.isoformat() if user.mfa_reenrol_deadline else None,
+        "phone_number": user.phone_number,
         "company_name": company.name if company else None,
         "company_id": company.id if company else None,
     }
@@ -106,7 +128,8 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
         return {"requires_mfa": True, "mfa_token": mfa_token}
 
     token = create_access_token({"sub": user.id})
-    return {"access_token": token, "token_type": "bearer", "user": _user_out(user)}
+    refresh = create_refresh_token(user.id, db)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_out(user)}
 
 
 # ── Me / Profile ──────────────────────────────────────────────────────────────
@@ -118,6 +141,7 @@ def me(current_user: models.User = Depends(get_current_user)):
 
 class UpdateProfileBody(BaseModel):
     full_name: str
+    phone_number: str = ""
 
 
 @router.patch("/profile")
@@ -129,6 +153,7 @@ def update_profile(
     if not body.full_name.strip():
         raise HTTPException(status_code=422, detail="Name cannot be empty")
     current_user.full_name = body.full_name.strip()
+    current_user.phone_number = body.phone_number.strip() or None
     db.commit()
     return _user_out(current_user)
 
@@ -151,17 +176,19 @@ def change_password(
     errors = _password_errors(body.new_password)
     if errors:
         raise HTTPException(status_code=422, detail=f"Password must contain: {', '.join(errors)}")
+    if _password_pwned(body.new_password):
+        raise HTTPException(status_code=422, detail="This password has appeared in a known data breach. Please choose a different password.")
 
     history = (
         db.query(models.PasswordHistory)
         .filter(models.PasswordHistory.user_id == current_user.id)
         .order_by(models.PasswordHistory.created_at.desc())
-        .limit(5)
+        .limit(10)
         .all()
     )
     for entry in history:
         if verify_password(body.new_password, entry.password_hash):
-            raise HTTPException(status_code=422, detail="You cannot reuse one of your last 5 passwords")
+            raise HTTPException(status_code=422, detail="You cannot reuse one of your last 10 passwords")
 
     db.add(models.PasswordHistory(user_id=current_user.id, password_hash=current_user.password_hash))
     current_user.password_hash = hash_password(body.new_password)
@@ -190,6 +217,8 @@ def activate_account(body: ActivateBody, db: Session = Depends(get_db)):
     errors = _password_errors(body.new_password)
     if errors:
         raise HTTPException(status_code=422, detail=f"Password must contain: {', '.join(errors)}")
+    if _password_pwned(body.new_password):
+        raise HTTPException(status_code=422, detail="This password has appeared in a known data breach. Please choose a different password.")
 
     user = record.user
     user.password_hash = hash_password(body.new_password)
@@ -211,7 +240,7 @@ def setup_2fa(
     db.commit()
     uri = pyotp.totp.TOTP(secret).provisioning_uri(
         name=current_user.email,
-        issuer_name="Ticket Beacon — SimBix LLP",
+        issuer_name="Beacon — SimBix LLP",
     )
     return {"secret": secret, "uri": uri}
 
@@ -276,7 +305,62 @@ def verify_2fa(body: VerifyMfaBody, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid authenticator code")
 
     token = create_access_token({"sub": user.id})
-    return {"access_token": token, "token_type": "bearer", "user": _user_out(user)}
+    refresh = create_refresh_token(user.id, db)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_out(user)}
+
+
+class OverrideMfaBody(BaseModel):
+    mfa_token: str
+    override_code: str
+
+
+@router.post("/2fa/override")
+def verify_2fa_override(body: OverrideMfaBody, db: Session = Depends(get_db)):
+    from jose import JWTError, jwt
+    try:
+        payload = jwt.decode(body.mfa_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired MFA token")
+    if not payload.get("mfa_pending"):
+        raise HTTPException(status_code=401, detail="Invalid MFA token")
+
+    user_id = payload.get("sub")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    token_hash = hashlib.sha256(body.override_code.encode()).hexdigest()
+    record = (
+        db.query(models.MfaOverrideCode)
+        .filter(
+            models.MfaOverrideCode.user_id == user_id,
+            models.MfaOverrideCode.token_hash == token_hash,
+            models.MfaOverrideCode.used == False,
+        )
+        .first()
+    )
+    if not record or record.expires_at < now_utc():
+        raise HTTPException(status_code=400, detail="Invalid or expired override code")
+
+    record.used = True
+    user.mfa_enabled = False
+    user.totp_secret = None
+    user.mfa_restricted = True
+    user.mfa_reenrol_deadline = now_utc() + timedelta(hours=24)
+    user.mfa_reminded_12h = False
+    user.mfa_reminded_22h = False
+
+    db.add(models.AuditLog(
+        ticket_id=None,
+        actor_id=user.id,
+        actor_label=user.full_name,
+        action="Used 2FA override code — account in restricted mode, must re-enrol within 24 hours",
+    ))
+    db.commit()
+
+    token = create_access_token({"sub": user.id})
+    refresh = create_refresh_token(user.id, db)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_out(user)}
 
 
 # ── Azure AD SSO ──────────────────────────────────────────────────────────────
@@ -313,7 +397,8 @@ async def _azure_user_login(access_token: str, db) -> dict:
         raise HTTPException(status_code=403, detail="Account is disabled")
 
     token = create_access_token({"sub": user.id})
-    return {"access_token": token, "token_type": "bearer", "user": _user_out(user)}
+    refresh = create_refresh_token(user.id, db)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_out(user)}
 
 
 class AzureLoginBody(BaseModel):
@@ -359,3 +444,45 @@ async def azure_code_login(body: AzureCodeBody, db: Session = Depends(get_db)):
 
     access_token = token_resp.json().get("access_token")
     return await _azure_user_login(access_token, db)
+
+
+# ── Refresh / Logout ──────────────────────────────────────────────────────────
+
+class RefreshBody(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh")
+def refresh_token(body: RefreshBody, db: Session = Depends(get_db)):
+    token_hash = hashlib.sha256(body.refresh_token.encode()).hexdigest()
+    record = (
+        db.query(models.RefreshToken)
+        .filter(models.RefreshToken.token_hash == token_hash)
+        .first()
+    )
+    if not record or record.expires_at < now_utc():
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    user = db.query(models.User).filter(models.User.id == record.user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # Rotate: delete old token, issue new pair
+    db.delete(record)
+    new_access = create_access_token({"sub": user.id})
+    new_refresh = create_refresh_token(user.id, db)
+    return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}
+
+
+@router.post("/logout")
+def logout(body: RefreshBody, db: Session = Depends(get_db)):
+    token_hash = hashlib.sha256(body.refresh_token.encode()).hexdigest()
+    record = (
+        db.query(models.RefreshToken)
+        .filter(models.RefreshToken.token_hash == token_hash)
+        .first()
+    )
+    if record:
+        db.delete(record)
+        db.commit()
+    return {"ok": True}

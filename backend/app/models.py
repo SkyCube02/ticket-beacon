@@ -29,6 +29,26 @@ class Company(Base):
     id = Column(String, primary_key=True, default=new_uuid)
     name = Column(String, nullable=False, unique=True)
     is_active = Column(Boolean, default=True)
+    priority_tier = Column(Integer, default=1)  # 1=Standard, 2=Premium, 3=Critical
+
+    # Contact info
+    phone = Column(String, nullable=True)
+    website = Column(String, nullable=True)
+    address = Column(Text, nullable=True)
+
+    # Contract
+    contract_start = Column(String, nullable=True)  # ISO date string
+    contract_end = Column(String, nullable=True)
+    sla_notes = Column(Text, nullable=True)
+
+    # Escalation
+    escalation_contact = Column(String, nullable=True)
+    escalation_phone = Column(String, nullable=True)
+    escalation_email = Column(String, nullable=True)
+
+    # Internal
+    notes = Column(Text, nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=now_utc)
 
     tickets = relationship("Ticket", back_populates="company")
@@ -53,11 +73,43 @@ class User(Base):
     invited_by_id = Column(String, ForeignKey("users.id"), nullable=True)
     totp_secret = Column(String, nullable=True)
     mfa_enabled = Column(Boolean, default=False)
+    mfa_restricted = Column(Boolean, default=False)
+    mfa_reenrol_deadline = Column(DateTime(timezone=True), nullable=True)
+    mfa_reminded_12h = Column(Boolean, default=False)
+    mfa_reminded_22h = Column(Boolean, default=False)
+    phone_number = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=now_utc)
 
     assigned_tickets = relationship("Ticket", back_populates="assignee", foreign_keys="Ticket.assignee_id")
     logs = relationship("AuditLog", back_populates="actor_user", foreign_keys="AuditLog.actor_id")
     companies = relationship("Company", secondary=agent_company_assignments, back_populates="agents")
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(String, primary_key=True, default=new_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class MfaOverrideCode(Base):
+    __tablename__ = "mfa_override_codes"
+
+    id = Column(String, primary_key=True, default=new_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    generated_by_id = Column(String, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, nullable=False, unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+
+    user = relationship("User", foreign_keys=[user_id])
+    generated_by = relationship("User", foreign_keys=[generated_by_id])
 
 
 class ActivationToken(Base):
@@ -111,6 +163,8 @@ class Ticket(Base):
     idempotency_key = Column(String, unique=True, nullable=True)
     satisfaction_score = Column(Integer, nullable=True)
     satisfaction_note = Column(Text, nullable=True)
+    priority_justification = Column(Text, nullable=True)
+    priority_pending_approval = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), default=now_utc)
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)

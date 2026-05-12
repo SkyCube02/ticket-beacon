@@ -42,6 +42,8 @@ def _serialize(ticket: models.Ticket, hide_internal: bool = False) -> dict:
         "company_name": ticket.company.name if ticket.company else None,
         "tags": ticket.tags or [],
         "sla_breached": ticket.sla_breached,
+        "priority_justification": ticket.priority_justification,
+        "priority_pending_approval": ticket.priority_pending_approval,
         "system_info": ticket.system_info,
         "satisfaction_score": ticket.satisfaction_score,
         "satisfaction_note": ticket.satisfaction_note,
@@ -147,6 +149,7 @@ class CreateTicketBody(BaseModel):
     title: str
     description: str = ""
     priority: str = "P3"
+    priority_justification: Optional[str] = None
     requester_name: str
     requester_email: str
     requester_dept: str = ""
@@ -173,6 +176,9 @@ def create_ticket(
     if body.priority not in SLA_WINDOWS:
         raise HTTPException(status_code=422, detail="Invalid priority")
 
+    if body.priority in ("P1", "P2") and not (body.priority_justification or "").strip():
+        raise HTTPException(status_code=422, detail=f"{body.priority} tickets require a justification explaining the business impact.")
+
     # Client users always submit as themselves
     is_client = current_user.role in ("CLIENT_USER", "CLIENT_MANAGER")
     requester_name = current_user.full_name if is_client else body.requester_name
@@ -181,11 +187,16 @@ def create_ticket(
     if is_client and not company_id:
         company_id = current_user.companies[0].id if current_user.companies else None
 
+    needs_approval = (body.priority == "P1" and
+                      current_user.role not in ("TEAM_MANAGER", "SYSTEM_ADMIN"))
+
     ticket = models.Ticket(
         ticket_number=_ticket_number(db),
         title=body.title,
         description=body.description,
         priority=body.priority,
+        priority_justification=body.priority_justification,
+        priority_pending_approval=needs_approval,
         requester_name=requester_name,
         requester_email=requester_email,
         requester_dept=body.requester_dept,
@@ -198,7 +209,12 @@ def create_ticket(
     db.add(ticket)
     db.flush()
 
-    _add_log(db, ticket.id, current_user.full_name, "opened ticket", actor_id=current_user.id)
+    action = "opened ticket"
+    if needs_approval:
+        action = f"opened ticket — P1 pending manager approval (justification: {body.priority_justification})"
+    elif body.priority in ("P1", "P2") and body.priority_justification:
+        action = f"opened ticket — {body.priority} justification: {body.priority_justification}"
+    _add_log(db, ticket.id, current_user.full_name, action, actor_id=current_user.id)
     db.commit()
     db.refresh(ticket)
     return _serialize(ticket)
@@ -266,6 +282,28 @@ def update_ticket(
         _add_log(db, ticket.id, current_user.full_name, "updated description", actor_id=current_user.id)
 
     ticket.updated_at = now
+    db.commit()
+    db.refresh(ticket)
+    return _serialize(ticket)
+
+
+# ── Approve P1 priority ───────────────────────────────────────────────────────
+
+@router.post("/{ticket_id}/approve-priority")
+def approve_priority(
+    ticket_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if current_user.role not in ("TEAM_MANAGER", "SYSTEM_ADMIN"):
+        raise HTTPException(status_code=403, detail="Only Team Managers and Admins can approve P1 priority")
+    ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if not ticket.priority_pending_approval:
+        raise HTTPException(status_code=400, detail="This ticket does not require priority approval")
+    ticket.priority_pending_approval = False
+    _add_log(db, ticket.id, current_user.full_name, "approved P1 priority", actor_id=current_user.id)
     db.commit()
     db.refresh(ticket)
     return _serialize(ticket)

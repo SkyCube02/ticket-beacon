@@ -5,6 +5,7 @@ import { api } from '../utils/api.js';
 import { atLeast } from '../utils/permissions.js';
 import { useToast } from '../utils/toast.jsx';
 import SatisfactionModal from './SatisfactionModal.jsx';
+import CompanyProfile from './CompanyProfile.jsx';
 import { getSLADeadlineMs, fmtCountdown, SLA_WINDOWS_S } from '../utils/sla.js';
 
 const FILE_ICONS = { PNG: '🖼', JPG: '🖼', PDF: '📄', DOCX: '📝' };
@@ -203,7 +204,7 @@ function MergeModal({ ticket, onClose, onMerge }) {
   );
 }
 
-export default function TicketDetail({ ticket, agents, currentUser, onClose, onUpdate, onRefresh, onLog }) {
+export default function TicketDetail({ ticket, agents, currentUser, onClose, onUpdate, onRefresh, onLog, isActive, onSetActive }) {
   const toast = useToast();
   const [comment, setComment] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -216,6 +217,7 @@ export default function TicketDetail({ ticket, agents, currentUser, onClose, onU
   const [isInternal, setIsInternal] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
+  const [showCompanyProfile, setShowCompanyProfile] = useState(false);
   const fileInputRef = useRef(null);
 
   async function handleFileSelect(e) {
@@ -369,6 +371,20 @@ export default function TicketDetail({ ticket, agents, currentUser, onClose, onU
           <StatusBadge status={ticket.status} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {onSetActive && isStaff && (
+            <button
+              onClick={onSetActive}
+              title={isActive ? 'Unpin active ticket' : 'Pin as active ticket'}
+              style={{
+                padding: '4px 10px', fontSize: 11, cursor: 'pointer', borderRadius: 5, fontWeight: 600,
+                background: isActive ? C.accentDim : 'transparent',
+                border: `1px solid ${isActive ? C.accent : C.border}`,
+                color: isActive ? C.accentLight : C.muted,
+              }}
+            >
+              {isActive ? '◉ Active' : '◎ Set Active'}
+            </button>
+          )}
           {isManager && !isTerminal && (
             <>
               <button onClick={() => setShowSplit(true)} style={{ padding: '4px 10px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 5, color: C.muted, fontSize: 11, cursor: 'pointer' }}>
@@ -464,7 +480,12 @@ export default function TicketDetail({ ticket, agents, currentUser, onClose, onU
           </MetaField>
           {ticket.company_name && (
             <MetaField label="Company">
-              <span style={{ color: C.accentLight }}>{ticket.company_name}</span>
+              <span
+                onClick={() => ticket.company_id && setShowCompanyProfile(true)}
+                style={{ color: C.accentLight, cursor: ticket.company_id ? 'pointer' : 'default', textDecoration: ticket.company_id ? 'underline' : 'none' }}
+              >
+                {ticket.company_name}
+              </span>
             </MetaField>
           )}
           <MetaField label="Created">{fmtFull(ticket.createdAt)}</MetaField>
@@ -475,6 +496,29 @@ export default function TicketDetail({ ticket, agents, currentUser, onClose, onU
             </select>
           </MetaField>
           <MetaField label="Priority">
+            {ticket.priority_pending_approval && (
+              <div style={{ marginBottom: 8, padding: '6px 10px', background: '#422006', border: '1px solid #92400e', borderRadius: 6, fontSize: 11, color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span>⚠ P1 pending manager approval</span>
+                {['TEAM_MANAGER', 'SYSTEM_ADMIN'].includes(currentUser.role) && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const updated = await api.approvePriority(ticket.id);
+                        onUpdate({ priority_pending_approval: false });
+                      } catch (e) {}
+                    }}
+                    style={{ padding: '3px 10px', background: '#4ade80', border: 'none', borderRadius: 4, color: '#052e16', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Approve P1
+                  </button>
+                )}
+              </div>
+            )}
+            {ticket.priority_justification && (
+              <div style={{ marginBottom: 8, fontSize: 11, color: C.muted, fontStyle: 'italic' }}>
+                "{ticket.priority_justification}"
+              </div>
+            )}
             {STAFF_ROLES.includes(currentUser.role) ? (
               <div>
                 <select
@@ -820,6 +864,14 @@ export default function TicketDetail({ ticket, agents, currentUser, onClose, onU
           ticket={ticket}
           onClose={() => setShowMerge(false)}
           onMerge={handleMerge}
+        />
+      )}
+
+      {showCompanyProfile && ticket.company_id && (
+        <CompanyProfile
+          companyId={ticket.company_id}
+          currentUser={currentUser}
+          onClose={() => setShowCompanyProfile(false)}
         />
       )}
     </div>

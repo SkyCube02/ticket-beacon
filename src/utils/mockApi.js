@@ -165,9 +165,9 @@ let _announcements = [
   { id: 'ann-2', title: 'Planned Maintenance — VPN Gateway — Saturday 02:00–04:00', category: 'MAINTENANCE', is_pinned: false,
     author: { full_name: 'Admin' }, createdAt: ago(0, 1), updatedAt: ago(0, 1),
     content: `The VPN gateway will be offline this Saturday between 02:00 and 04:00 BST.\n\nRemote workers should not expect to connect during this window. Active sessions will be dropped at 02:00.\n\nComplete any overnight VPN work before 01:45 or arrange to work on-site.` },
-  { id: 'ann-3', title: 'Ticket Beacon is now live — FreshService retired', category: 'GENERAL', is_pinned: false,
+  { id: 'ann-3', title: 'Beacon is now live — FreshService retired', category: 'GENERAL', is_pinned: false,
     author: { full_name: 'Admin' }, createdAt: ago(0, 3), updatedAt: ago(0, 3),
-    content: `Ticket Beacon is now the official support portal. FreshService has been decommissioned.\n\nAll new tickets go through Ticket Beacon. Training guides are in the Knowledge Base.` },
+    content: `Beacon is now the official support portal. FreshService has been decommissioned.\n\nAll new tickets go through Beacon. Training guides are in the Knowledge Base.` },
 ];
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────

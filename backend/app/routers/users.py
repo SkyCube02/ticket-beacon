@@ -22,6 +22,8 @@ def _serialize(user: models.User) -> dict:
         "full_name": user.full_name,
         "role": user.role,
         "is_active": user.is_active,
+        "mfa_enabled": user.mfa_enabled,
+        "mfa_restricted": user.mfa_restricted,
         "created_at": user.created_at.isoformat(),
     }
 
@@ -131,3 +133,72 @@ def invite_user(
 
     invite_url = f"{settings.FRONTEND_URL}?token={raw_token}"
     return {"invite_url": invite_url, "expires_hours": 72}
+
+
+@router.post("/{user_id}/2fa/generate-override")
+def generate_mfa_override(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="User does not have 2FA enabled")
+
+    # Invalidate any existing unused override codes for this user
+    db.query(models.MfaOverrideCode).filter(
+        models.MfaOverrideCode.user_id == user_id,
+        models.MfaOverrideCode.used == False,
+    ).delete()
+
+    raw = secrets.token_urlsafe(16)
+    token_hash = hashlib.sha256(raw.encode()).hexdigest()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+
+    db.add(models.MfaOverrideCode(
+        user_id=user_id,
+        generated_by_id=current_user.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    ))
+    db.add(models.AuditLog(
+        ticket_id=None,
+        actor_id=current_user.id,
+        actor_label=current_user.full_name,
+        action=f"Generated 2FA override code for {user.email} (expires in 30 min)",
+    ))
+    db.commit()
+    return {"override_code": raw, "expires_minutes": 30}
+
+
+@router.post("/{user_id}/2fa/unlock")
+def unlock_mfa_restriction(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot unlock your own account")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.mfa_restricted = False
+    user.mfa_reenrol_deadline = None
+    user.mfa_reminded_12h = False
+    user.mfa_reminded_22h = False
+    user.mfa_enabled = False
+    user.totp_secret = None
+    user.is_active = True
+    db.add(models.AuditLog(
+        ticket_id=None,
+        actor_id=current_user.id,
+        actor_label=current_user.full_name,
+        action=f"Admin unlocked 2FA restriction for {user.email} — 2FA reset, re-enrolment required",
+    ))
+    db.commit()
+    return {"ok": True}

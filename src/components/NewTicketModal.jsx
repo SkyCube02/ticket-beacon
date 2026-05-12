@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { C, P } from '../constants/theme.js';
 import { api } from '../utils/api.js';
 
 const PRIORITIES = ['P1', 'P2', 'P3', 'P4', 'P5'];
+const PRIORITY_COLOR = { P1: '#ef4444', P2: '#f97316', P3: '#eab308', P4: '#60a5fa', P5: C.muted };
 
 const inputStyle = {
   width: '100%',
@@ -41,11 +42,14 @@ export default function NewTicketModal({ agents, companies = [], currentUser, on
   const [companyId, setCompanyId] = useState(companies[0]?.id || '');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNote, setAiNote] = useState('');
+  const [suggestion, setSuggestion] = useState(null); // { suggested, confidence, reasons }
+  const [justification, setJustification] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [kbSuggestions, setKbSuggestions] = useState([]);
   const [expandedKb, setExpandedKb] = useState(null);
   const kbTimer = useRef(null);
+  const algoTimer = useRef(null);
 
   useEffect(() => {
     const query = title.trim();
@@ -56,6 +60,17 @@ export default function NewTicketModal({ agents, companies = [], currentUser, on
     }, 400);
     return () => clearTimeout(kbTimer.current);
   }, [title]);
+
+  useEffect(() => {
+    if (title.trim().length < 4) { setSuggestion(null); return; }
+    clearTimeout(algoTimer.current);
+    algoTimer.current = setTimeout(() => {
+      api.suggestPriority(title.trim(), description.trim(), companyId || null)
+        .then(s => setSuggestion(s))
+        .catch(() => {});
+    }, 600);
+    return () => clearTimeout(algoTimer.current);
+  }, [title, description, companyId]);
 
   async function handleAiTriage() {
     if (!title.trim() && !description.trim()) return;
@@ -83,6 +98,10 @@ export default function NewTicketModal({ agents, companies = [], currentUser, on
   async function handleSubmit(e) {
     e.preventDefault();
     if (!title.trim()) return;
+    if (['P1', 'P2'].includes(priority) && !justification.trim()) {
+      setError(`${priority} tickets require a justification explaining the business impact.`);
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -90,6 +109,7 @@ export default function NewTicketModal({ agents, companies = [], currentUser, on
         title: title.trim(),
         description: description.trim(),
         priority,
+        priority_justification: justification.trim() || null,
         requester_name: requesterName.trim() || currentUser.full_name,
         requester_email: requesterEmail.trim() || currentUser.email || '',
         requester_dept: requesterDept.trim(),
@@ -235,27 +255,70 @@ export default function NewTicketModal({ agents, companies = [], currentUser, on
           </Field>
 
           <Field label="Priority">
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
               {PRIORITIES.map(p => {
                 const s = P[p];
+                const isSuggested = suggestion?.suggested === p;
                 return (
                   <button
                     key={p} type="button"
                     onClick={() => setPriority(p)}
                     style={{
-                      flex: 1,
-                      padding: '6px 0',
+                      flex: 1, padding: '6px 0',
                       background: priority === p ? s.bg : 'transparent',
-                      border: `1px solid ${priority === p ? s.border : C.border}`,
+                      border: `2px solid ${priority === p ? s.border : isSuggested ? PRIORITY_COLOR[p] : C.border}`,
                       borderRadius: 5,
-                      color: priority === p ? s.text : C.dim,
-                      fontSize: 11, fontWeight: 700,
-                      cursor: 'pointer',
+                      color: priority === p ? s.text : isSuggested ? PRIORITY_COLOR[p] : C.dim,
+                      fontSize: 11, fontWeight: 700, cursor: 'pointer', position: 'relative',
                     }}
-                  >{p}</button>
+                  >
+                    {p}
+                    {isSuggested && (
+                      <span style={{ position: 'absolute', top: -6, right: -2, fontSize: 8, background: PRIORITY_COLOR[p], color: '#fff', borderRadius: 3, padding: '1px 3px', fontWeight: 800 }}>
+                        ✦
+                      </span>
+                    )}
+                  </button>
                 );
               })}
             </div>
+
+            {suggestion && (
+              <div style={{ fontSize: 11, color: C.muted, background: C.card, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', marginBottom: 8 }}>
+                <span style={{ color: PRIORITY_COLOR[suggestion.suggested], fontWeight: 700 }}>Algorithm suggests {suggestion.suggested}</span>
+                <span style={{ color: C.dim }}> ({Math.round(suggestion.confidence * 100)}% confidence)</span>
+                {suggestion.reasons.length > 0 && (
+                  <div style={{ marginTop: 4, color: C.dim }}>
+                    {suggestion.reasons.map((r, i) => <span key={i} style={{ marginRight: 8 }}>· {r}</span>)}
+                  </div>
+                )}
+                {suggestion.suggested !== priority && (
+                  <button type="button" onClick={() => setPriority(suggestion.suggested)} style={{ marginTop: 6, padding: '3px 10px', background: 'transparent', border: `1px solid ${PRIORITY_COLOR[suggestion.suggested]}`, borderRadius: 4, color: PRIORITY_COLOR[suggestion.suggested], fontSize: 11, cursor: 'pointer' }}>
+                    Use {suggestion.suggested}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {['P1', 'P2'].includes(priority) && (
+              <div style={{ marginTop: 4 }}>
+                <label style={{ display: 'block', fontSize: 10, color: priority === 'P1' ? '#f87171' : '#fbbf24', fontWeight: 700, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                  {priority} Justification required *
+                </label>
+                <textarea
+                  value={justification}
+                  onChange={e => setJustification(e.target.value)}
+                  placeholder={priority === 'P1' ? 'Describe the full business impact. P1 requires manager approval before taking effect.' : 'Describe why this is high priority and the business impact.'}
+                  rows={3}
+                  style={{ ...inputStyle, resize: 'vertical', borderColor: justification.trim() ? C.border : (priority === 'P1' ? '#7f1d1d' : '#92400e') }}
+                />
+                {priority === 'P1' && (
+                  <div style={{ fontSize: 11, color: '#f87171', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    ⚠ P1 tickets require manager approval before taking full effect.
+                  </div>
+                )}
+              </div>
+            )}
           </Field>
 
           <button

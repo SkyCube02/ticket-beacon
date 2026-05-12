@@ -316,7 +316,14 @@ export default function TicketList({
               {t.title}
             </span>
 
-            <span><PriorityBadge p={t.priority} /></span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <PriorityBadge p={t.priority} />
+              {t.priority_pending_approval && (
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#fbbf24', background: '#422006', border: '1px solid #92400e', borderRadius: 3, padding: '1px 4px' }}>
+                  PENDING
+                </span>
+              )}
+            </span>
 
             <span><StatusBadge status={t.status} /></span>
 

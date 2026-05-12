@@ -39,7 +39,7 @@
   },
   "build": {
     "appId": "com.simbix.ticketbeacon",
-    "productName": "Ticket Beacon",
+    "productName": "Beacon",
     "directories": {
       "output": "release"
     },

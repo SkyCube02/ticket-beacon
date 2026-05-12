@@ -410,7 +410,7 @@ export default function ClientDashboard({ user, onLogout }) {
       {/* Top bar */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '0 24px', display: 'flex', alignItems: 'center', gap: 16, height: 54, flexShrink: 0 }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: C.text, flex: 1 }}>
-          <span style={{ color: '#7c3aed' }}>●</span> Ticket Beacon
+          <span style={{ color: '#7c3aed' }}>●</span> Beacon
           <span style={{ fontSize: 11, color: C.muted, fontWeight: 400, marginLeft: 10 }}>Client Portal</span>
         </div>
         <div style={{ fontSize: 12, color: C.muted }}>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { C } from '../constants/theme.js';
 import { api } from '../utils/api.js';
 import { useToast } from '../utils/toast.jsx';
+import CompanyProfile from './CompanyProfile.jsx';
 
 const COMPANY_COLORS = ['#2563eb','#7c3aed','#db2777','#059669','#d97706'];
 
@@ -96,12 +97,13 @@ function NewUserModal({ onClose, onCreated }) {
   );
 }
 
-function CompanyManagement({ allUsers, toast }) {
+function CompanyManagement({ allUsers, toast, currentUser }) {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [profileId, setProfileId] = useState(null);
 
   useEffect(() => {
     api.listAllCompanies()
@@ -154,6 +156,7 @@ function CompanyManagement({ allUsers, toast }) {
   };
 
   return (
+    <>
     <div style={{ flex: 1, overflowY: 'auto' }}>
       <form onSubmit={handleCreate} style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 8 }}>
         <input
@@ -179,8 +182,30 @@ function CompanyManagement({ allUsers, toast }) {
           <div key={company.id} style={{ borderBottom: `1px solid ${C.border}`, opacity: company.is_active ? 1 : 0.5 }}>
             <div style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: C.text }}>{company.name}</span>
+              <span
+                onClick={() => setProfileId(company.id)}
+                style={{ flex: 1, fontSize: 14, fontWeight: 600, color: C.text, cursor: 'pointer', textDecoration: 'underline', textDecorationColor: C.border }}
+                onMouseEnter={e => e.target.style.color = C.accentLight}
+                onMouseLeave={e => e.target.style.color = C.text}
+              >{company.name}</span>
               <span style={{ fontSize: 12, color: C.muted }}>{company.agent_ids?.length || 0} agents · {company.ticket_count} tickets</span>
+              <select
+                value={company.priority_tier || 1}
+                onChange={async e => {
+                  const tier = parseInt(e.target.value);
+                  try {
+                    const result = await api.updateCompany(company.id, { name: company.name, priority_tier: tier });
+                    setCompanies(prev => prev.map(c => c.id === result.id ? result : c));
+                    toast(`${company.name} tier updated`, 'success');
+                  } catch (err) { toast(err.message, 'error'); }
+                }}
+                style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 4, padding: '3px 6px', color: C.text, fontSize: 11, cursor: 'pointer' }}
+                title="Priority tier affects auto-priority suggestions"
+              >
+                <option value={1}>Standard</option>
+                <option value={2}>Premium</option>
+                <option value={3}>Critical</option>
+              </select>
               <button
                 onClick={() => setExpandedId(isExpanded ? null : company.id)}
                 style={{ padding: '4px 12px', background: C.accentDim, border: `1px solid ${C.accent}`, borderRadius: 4, color: C.accentLight, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
@@ -219,6 +244,14 @@ function CompanyManagement({ allUsers, toast }) {
         );
       })}
     </div>
+    {profileId && (
+      <CompanyProfile
+        companyId={profileId}
+        currentUser={currentUser}
+        onClose={() => setProfileId(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -240,6 +273,27 @@ export default function AccountManagement({ currentUser }) {
       const updated = await api.updateUser(user.id, { is_active: !user.is_active });
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
       toast(`${updated.full_name} ${updated.is_active ? 'reactivated' : 'deactivated'}`, 'success');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  async function handleGenerateOverride(user) {
+    try {
+      const result = await api.generateMfaOverride(user.id);
+      toast(`Override code generated — give this to ${user.full_name} (expires in 30 min)`, 'success');
+      alert(`2FA Override Code for ${user.full_name}:\n\n${result.override_code}\n\nExpires in 30 minutes. Share this securely.`);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  async function handleUnlockMfa(user) {
+    if (!window.confirm(`Unlock ${user.full_name}'s account and reset their 2FA? They will need to re-enrol on next login.`)) return;
+    try {
+      await api.unlockMfaRestriction(user.id);
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_active: true } : u));
+      toast(`${user.full_name} unlocked — 2FA reset`, 'success');
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -284,7 +338,7 @@ export default function AccountManagement({ currentUser }) {
       </div>
 
       {adminTab === 'companies' ? (
-        <CompanyManagement allUsers={users} toast={toast} />
+        <CompanyManagement allUsers={users} toast={toast} currentUser={currentUser} />
       ) : (
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {loading ? (
@@ -329,17 +383,35 @@ export default function AccountManagement({ currentUser }) {
                     </td>
                     <td style={{ padding: '12px 20px' }}>
                       {!isSelf && (
-                        <button
-                          onClick={() => handleToggleActive(u)}
-                          style={{
-                            padding: '4px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                            background: 'transparent', borderRadius: 4,
-                            border: `1px solid ${u.is_active ? '#7f1d1d' : C.border}`,
-                            color: u.is_active ? '#f87171' : C.muted,
-                          }}
-                        >
-                          {u.is_active ? 'Deactivate' : 'Reactivate'}
-                        </button>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => handleToggleActive(u)}
+                            style={{
+                              padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                              background: 'transparent', borderRadius: 4,
+                              border: `1px solid ${u.is_active ? '#7f1d1d' : C.border}`,
+                              color: u.is_active ? '#f87171' : C.muted,
+                            }}
+                          >
+                            {u.is_active ? 'Deactivate' : 'Reactivate'}
+                          </button>
+                          {u.mfa_enabled && (
+                            <button
+                              onClick={() => handleGenerateOverride(u)}
+                              style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', borderRadius: 4, border: `1px solid #854d0e`, color: '#fbbf24' }}
+                            >
+                              2FA override
+                            </button>
+                          )}
+                          {u.mfa_restricted && (
+                            <button
+                              onClick={() => handleUnlockMfa(u)}
+                              style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'transparent', borderRadius: 4, border: `1px solid #166534`, color: '#4ade80' }}
+                            >
+                              Unlock 2FA
+                            </button>
+                          )}
+                        </div>
                       )}
                       {isSelf && <span style={{ fontSize: 11, color: C.dim }}>Current user</span>}
                     </td>

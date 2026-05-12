@@ -6,7 +6,32 @@ function getToken() {
   return localStorage.getItem('tb_token');
 }
 
-async function req(method, path, body) {
+function getRefreshToken() {
+  return localStorage.getItem('tb_refresh_token');
+}
+
+let _refreshing = null;
+
+async function tryRefresh() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    localStorage.setItem('tb_token', data.access_token);
+    localStorage.setItem('tb_refresh_token', data.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function req(method, path, body, _isRetry = false) {
   const headers = { 'Content-Type': 'application/json' };
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -17,8 +42,12 @@ async function req(method, path, body) {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  if (res.status === 401) {
+  if (res.status === 401 && !_isRetry) {
+    if (!_refreshing) _refreshing = tryRefresh().finally(() => { _refreshing = null; });
+    const ok = await _refreshing;
+    if (ok) return req(method, path, body, true);
     localStorage.removeItem('tb_token');
+    localStorage.removeItem('tb_refresh_token');
     window.location.reload();
     return;
   }
@@ -48,9 +77,10 @@ const _realApi = {
     });
   },
   me: () => req('GET', '/auth/me'),
+  logout: (refresh_token) => req('POST', '/auth/logout', { refresh_token }),
   changePassword: (current_password, new_password) =>
     req('POST', '/auth/change-password', { current_password, new_password }),
-  updateProfile: full_name => req('PATCH', '/auth/profile', { full_name }),
+  updateProfile: (full_name, phone_number = '') => req('PATCH', '/auth/profile', { full_name, phone_number }),
 
   // Tickets
   listTickets: (params = {}) => {
@@ -63,6 +93,8 @@ const _realApi = {
   getTicket: id => req('GET', `/tickets/${id}`),
   createTicket: body => req('POST', '/tickets', body),
   updateTicket: (id, changes) => req('PATCH', `/tickets/${id}`, changes),
+  approvePriority: id => req('POST', `/tickets/${id}/approve-priority`),
+  suggestPriority: (title, description, company_id) => req('POST', '/priority/suggest', { title, description, company_id }),
   addLog: (id, actor_label, action, meta = {}, is_internal = false) =>
     req('POST', `/tickets/${id}/logs`, { actor_label, action, meta, is_internal }),
   listAgents: () => req('GET', '/tickets/meta/agents'),
@@ -86,6 +118,7 @@ const _realApi = {
   // Companies
   listCompanies: () => req('GET', '/companies'),
   listAllCompanies: () => req('GET', '/companies/all'),
+  getCompany: id => req('GET', `/companies/${id}`),
   createCompany: body => req('POST', '/companies', body),
   updateCompany: (id, body) => req('PATCH', `/companies/${id}`, body),
   setCompanyAgents: (id, agent_ids) => req('PUT', `/companies/${id}/agents`, { agent_ids }),
@@ -161,6 +194,9 @@ const _realApi = {
   enable2fa: (totp_code) => req('POST', '/auth/2fa/enable', { totp_code }),
   disable2fa: (totp_code) => req('POST', '/auth/2fa/disable', { totp_code }),
   verifyMfa: (mfa_token, totp_code) => req('POST', '/auth/2fa/verify', { mfa_token, totp_code }),
+  verifyMfaOverride: (mfa_token, override_code) => req('POST', '/auth/2fa/override', { mfa_token, override_code }),
+  generateMfaOverride: (user_id) => req('POST', `/users/${user_id}/2fa/generate-override`),
+  unlockMfaRestriction: (user_id) => req('POST', `/users/${user_id}/2fa/unlock`),
   azureLogin: (access_token) => req('POST', '/auth/azure', { access_token }),
   azureCodeLogin: (code, code_verifier, redirect_uri) =>
     req('POST', '/auth/azure-code', { code, code_verifier, redirect_uri }),

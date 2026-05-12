@@ -72,7 +72,7 @@ def seed(force=False):
     )
     # Fallback admin with known password for demos
     admin_demo = models.User(
-        email="admin@ticketbeacon.com", full_name="Ticket Beacon Admin",
+        email="admin@ticketbeacon.com", full_name="Beacon Admin",
         password_hash=hash_password("DemoAdmin1!xx"), role="SYSTEM_ADMIN",
     )
     db.add_all([ben, marcus, sam, jamie, priya, admin_demo])
@@ -211,7 +211,7 @@ def seed(force=False):
         models.KBArticle(title="New starter IT provisioning checklist", category="HR & Onboarding", tags=["onboarding","new-starter"],
             author_id=jamie.id, content="""Raise a ticket at least 5 working days before the start date.\n\nIT PROVISIONS\n- Laptop or desktop (specify make/model)\n- Microsoft 365 account (email, Teams, SharePoint, OneDrive)\n- VPN credentials\n- Software per role (see approved software list)\n- Slack workspace invite\n\nINFO REQUIRED IN TICKET\n- Full name and preferred email format\n- Start date and office location\n- Manager name and team\n- Role (determines access group)\n- Any specific software requirements\n\nDAY 1\nNew starter receives welcome email with temporary password and IT support contact."""),
         models.KBArticle(title="How to reset a user's MFA (SYSTEM_ADMIN only)", category="Account Management", tags=["mfa","2fa","admin","reset"],
-            author_id=ben.id, content="""OVERVIEW\nThis procedure is for SYSTEM_ADMINs only. Use it when a user has lost access to their authenticator app.\n\nPROCEDURE\n1. Verify the request via the user's line manager — they must contact SimBix LLP directly.\n2. Complete identity verification via a video call before proceeding.\n3. In Ticket Beacon Admin panel, locate the user account.\n4. Click "Reset MFA" — this clears the user's TOTP secret and disables 2FA on their account.\n5. Instruct the user to log in with password only, then re-enrol 2FA immediately from Settings.\n6. The user must re-enrol within 24 hours or their account enters restricted access.\n\nAUDIT\nAll MFA resets are recorded in the audit log. Never reset MFA without completing identity verification."""),
+            author_id=ben.id, content="""OVERVIEW\nThis procedure is for SYSTEM_ADMINs only. Use it when a user has lost access to their authenticator app.\n\nPROCEDURE\n1. Verify the request via the user's line manager — they must contact SimBix LLP directly.\n2. Complete identity verification via a video call before proceeding.\n3. In Beacon Admin panel, locate the user account.\n4. Click "Reset MFA" — this clears the user's TOTP secret and disables 2FA on their account.\n5. Instruct the user to log in with password only, then re-enrol 2FA immediately from Settings.\n6. The user must re-enrol within 24 hours or their account enters restricted access.\n\nAUDIT\nAll MFA resets are recorded in the audit log. Never reset MFA without completing identity verification."""),
     ]
     db.add_all(kb_articles)
 
@@ -224,12 +224,12 @@ def seed(force=False):
         ),
         models.Announcement(
             title="Planned maintenance — VPN gateway & authentication services — Saturday 02:00–04:00 BST",
-            content="The VPN gateway and authentication services will be offline Saturday between 02:00 and 04:00 BST.\n\nActive VPN sessions will be terminated at 02:00. Complete any VPN-dependent work before 01:45 or arrange to be on-site.\n\nTicket Beacon will remain available. Emergency contacts are cached on all desktop clients.",
+            content="The VPN gateway and authentication services will be offline Saturday between 02:00 and 04:00 BST.\n\nActive VPN sessions will be terminated at 02:00. Complete any VPN-dependent work before 01:45 or arrange to be on-site.\n\nBeacon will remain available. Emergency contacts are cached on all desktop clients.",
             category="MAINTENANCE", is_pinned=False, author_id=marcus.id,
         ),
         models.Announcement(
-            title="Ticket Beacon is now live — FreshService decommissioned",
-            content="Ticket Beacon is now the official support portal for all IT requests. FreshService was decommissioned on 1 May.\n\nAll new tickets go through Ticket Beacon. Historical tickets have been archived — contact IT if you need an old reference.\n\nTraining guides are available in the Knowledge Base. Raise a ticket if you have any issues accessing the new system.",
+            title="Beacon is now live — FreshService decommissioned",
+            content="Beacon is now the official support portal for all IT requests. FreshService was decommissioned on 1 May.\n\nAll new tickets go through Beacon. Historical tickets have been archived — contact IT if you need an old reference.\n\nTraining guides are available in the Knowledge Base. Raise a ticket if you have any issues accessing the new system.",
             category="GENERAL", is_pinned=False, author_id=ben.id,
         ),
     ])

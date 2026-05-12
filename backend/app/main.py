@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine
 from . import models
-from .routers import auth, tickets, claude, kb, reports, users, companies, announcements, attachments, tasks, emergency, integrations, notifications
+from .routers import auth, tickets, claude, kb, reports, users, companies, announcements, attachments, tasks, emergency, integrations, notifications, priority
 from .scheduler import start_scheduler
 
 models.Base.metadata.create_all(bind=engine)
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 
-app = FastAPI(title="Ticket Beacon API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Beacon API", version="0.1.0", lifespan=lifespan)
 
 _extra_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
@@ -52,6 +52,7 @@ app.include_router(tasks.router)
 app.include_router(emergency.router)
 app.include_router(integrations.router)
 app.include_router(notifications.router)
+app.include_router(priority.router)
 
 
 @app.get("/api/health")

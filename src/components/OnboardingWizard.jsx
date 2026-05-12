@@ -39,7 +39,7 @@ function StepWelcome({ onNext }) {
   return (
     <div style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 40, marginBottom: 16 }}>◈</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 10 }}>Welcome to Ticket Beacon</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 10 }}>Welcome to Beacon</div>
       <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.7, marginBottom: 28 }}>
         Let's get your helpdesk set up in a few quick steps.<br />
         You can always change these settings later from the Admin panel.
@@ -159,25 +159,48 @@ function StepCompanies({ onNext, onSkip }) {
 }
 
 function StepConfigure({ onNext }) {
+  const [twilioSid, setTwilioSid] = useState(localStorage.getItem('tb_twilio_sid') || '');
+  const [twilioToken, setTwilioToken] = useState(localStorage.getItem('tb_twilio_token') || '');
+  const [twilioFrom, setTwilioFrom] = useState(localStorage.getItem('tb_twilio_from') || '');
+  const [twilioAlertTo, setTwilioAlertTo] = useState(localStorage.getItem('tb_twilio_alert_to') || '');
+  const [teamsWebhook, setTeamsWebhook] = useState(localStorage.getItem('tb_teams_webhook') || '');
+
+  function handleNext() {
+    if (twilioSid.trim()) localStorage.setItem('tb_twilio_sid', twilioSid.trim());
+    if (twilioToken.trim()) localStorage.setItem('tb_twilio_token', twilioToken.trim());
+    if (twilioFrom.trim()) localStorage.setItem('tb_twilio_from', twilioFrom.trim());
+    if (twilioAlertTo.trim()) localStorage.setItem('tb_twilio_alert_to', twilioAlertTo.trim());
+    if (teamsWebhook.trim()) localStorage.setItem('tb_teams_webhook', teamsWebhook.trim());
+    onNext();
+  }
+
+  const sectionLabel = { fontSize: 11, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, marginTop: 18 };
+  const field = { label: '', input: null };
+
   return (
     <div>
-      <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 4 }}>Quick configuration</div>
-      <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>These can all be changed in Settings at any time.</div>
-      {[
-        ['P1 / P2 SLA window', '2 minutes (demo mode — change for production)'],
-        ['P3–P5 SLA window', '30 minutes (demo mode — change for production)'],
-        ['Auto-refresh', 'Every 30 seconds'],
-        ['Session timeout', '30 minutes of inactivity'],
-        ['Ticket retention', 'Auto-delete closed tickets after 12 months'],
-      ].map(([label, value]) => (
-        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: C.card, borderRadius: 6, marginBottom: 6 }}>
-          <span style={{ fontSize: 13, color: C.text }}>{label}</span>
-          <span style={{ fontSize: 12, color: C.muted }}>{value}</span>
-        </div>
-      ))}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
-        <button onClick={onNext} style={{ padding: '8px 22px', background: C.accent, border: 'none', borderRadius: 6, color: C.white, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          Continue →
+      <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 4 }}>Connect your integrations</div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>Optional — you can skip this and configure later in Settings.</div>
+
+      <div style={sectionLabel}>Twilio SMS (P1/P2 SLA breach alerts)</div>
+      <input value={twilioSid} onChange={e => setTwilioSid(e.target.value)} placeholder="Account SID — ACxxxxxxxxxxxxxxxx" style={{ ...inp, fontFamily: 'monospace', fontSize: 11 }} />
+      <input value={twilioToken} onChange={e => setTwilioToken(e.target.value)} placeholder="Auth token" type="password" style={{ ...inp }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <input value={twilioFrom} onChange={e => setTwilioFrom(e.target.value)} placeholder="From number (+441302…)" style={{ ...inp, fontFamily: 'monospace', fontSize: 11 }} />
+        <input value={twilioAlertTo} onChange={e => setTwilioAlertTo(e.target.value)} placeholder="Alert-to number (+447700…)" style={{ ...inp, fontFamily: 'monospace', fontSize: 11 }} />
+      </div>
+
+      <div style={sectionLabel}>Microsoft Teams</div>
+      <input value={teamsWebhook} onChange={e => setTeamsWebhook(e.target.value)} placeholder="Incoming webhook URL" style={{ ...inp, fontFamily: 'monospace', fontSize: 11 }} />
+
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4, marginBottom: 16 }}>
+        All settings can be changed at any time in Settings → Integrations.
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <button onClick={onNext} style={{ padding: '8px 18px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 13, cursor: 'pointer' }}>Skip</button>
+        <button onClick={handleNext} style={{ padding: '8px 22px', background: C.accent, border: 'none', borderRadius: 6, color: C.white, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          Save & continue →
         </button>
       </div>
     </div>
@@ -188,7 +211,7 @@ function StepDone({ onComplete }) {
   return (
     <div style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 48, marginBottom: 16 }}>✓</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 10 }}>Ticket Beacon is ready</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 10 }}>Beacon is ready</div>
       <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.7, marginBottom: 28 }}>
         Your helpdesk is configured. Agents can log in at the Agent Portal,<br />
         and client users at the Client Portal.

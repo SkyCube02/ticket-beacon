@@ -79,6 +79,7 @@ function Select({ value, onChange, options }) {
 export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
   const toast = useToast();
   const [fullName, setFullName] = useState(user.full_name);
+  const [phoneNumber, setPhoneNumber] = useState(user.phone_number || '');
   const [savingName, setSavingName] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
   const [teamsWebhook, setTeamsWebhook] = useState(localStorage.getItem('tb_teams_webhook') || '');
@@ -110,8 +111,8 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
         '@type': 'MessageCard',
         '@context': 'http://schema.org/extensions',
         themeColor: '2563eb',
-        summary: 'Ticket Beacon — Teams test',
-        sections: [{ activityTitle: '✓ Ticket Beacon Teams integration is working!' }],
+        summary: 'Beacon — Teams test',
+        sections: [{ activityTitle: '✓ Beacon Teams integration is working!' }],
       });
       toast('Test message sent successfully', 'success');
     } catch {
@@ -122,12 +123,12 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
   }
 
   async function handleSaveName() {
-    if (fullName.trim() === user.full_name) return;
+    if (fullName.trim() === user.full_name && phoneNumber.trim() === (user.phone_number || '')) return;
     setSavingName(true);
     try {
-      const updated = await api.updateProfile(fullName.trim());
+      const updated = await api.updateProfile(fullName.trim(), phoneNumber.trim());
       onUserUpdate(updated);
-      toast('Display name updated', 'success');
+      toast('Profile updated', 'success');
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -167,6 +168,31 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
                 padding: '6px 14px', background: fullName.trim() !== user.full_name ? C.accent : C.card,
                 border: `1px solid ${fullName.trim() !== user.full_name ? C.accent : C.border}`,
                 borderRadius: 6, color: fullName.trim() !== user.full_name ? C.white : C.dim,
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              {savingName ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </Row>
+        <Row label="Phone number" description="Used for P1/P2 SLA breach SMS alerts (E.164 format, e.g. +447700900123)">
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              value={phoneNumber}
+              onChange={e => setPhoneNumber(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+              placeholder="+447700900123"
+              style={inputStyle}
+            />
+            <button
+              onClick={handleSaveName}
+              disabled={savingName || (fullName.trim() === user.full_name && phoneNumber.trim() === (user.phone_number || ''))}
+              style={{
+                padding: '6px 14px',
+                background: phoneNumber.trim() !== (user.phone_number || '') ? C.accent : C.card,
+                border: `1px solid ${phoneNumber.trim() !== (user.phone_number || '') ? C.accent : C.border}`,
+                borderRadius: 6,
+                color: phoneNumber.trim() !== (user.phone_number || '') ? C.white : C.dim,
                 fontSize: 12, fontWeight: 600, cursor: 'pointer',
               }}
             >
@@ -291,7 +317,7 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
             style={{ ...inputStyle, width: 160, fontFamily: 'monospace', fontSize: 11 }}
           />
         </Row>
-        <Row label="Alert phone number" description="Number to call/SMS on P1/P2 breach">
+        <Row label="Alert phone number" description="Fallback number for P1/P2 SMS + voice call when ticket has no assignee. Set TWILIO_ALERT_TO in .env for automated scheduler use.">
           <input
             defaultValue={localStorage.getItem('tb_twilio_alert_to') || ''}
             onBlur={e => localStorage.setItem('tb_twilio_alert_to', e.target.value)}
@@ -302,7 +328,7 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
       </Section>
 
       {/* Integrations */}
-      <Section title="Integrations" description="Connect Ticket Beacon to external services">
+      <Section title="Integrations" description="Connect Beacon to external services">
         <Row label="Microsoft Teams webhook" description="Paste an Incoming Webhook URL from your Teams channel connector. Enables 'Teams' button on P1/P2 tickets.">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
             <input
@@ -334,6 +360,17 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
               >Save</button>
             </div>
           </div>
+        </Row>
+        <Row label="RealVNC Connect URL" description="Base URL for RealVNC Connect. Enables one-click remote access from the Active Ticket panel when a hostname is available.">
+          <input
+            defaultValue={localStorage.getItem('tb_realvnc_url') || ''}
+            onBlur={e => {
+              localStorage.setItem('tb_realvnc_url', e.target.value.trim());
+              toast('RealVNC URL saved', 'success');
+            }}
+            placeholder="https://app.realvnc.com/connect"
+            style={{ ...inputStyle, width: 280, fontSize: 11, fontFamily: 'monospace' }}
+          />
         </Row>
       </Section>
 

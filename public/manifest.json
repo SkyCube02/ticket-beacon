@@ -1,6 +1,6 @@
 {
-  "name": "Ticket Beacon",
-  "short_name": "Ticket Beacon",
+  "name": "Beacon",
+  "short_name": "Beacon",
   "description": "Help desk ticketing platform for SimBix",
   "start_url": "/",
   "display": "fullscreen",

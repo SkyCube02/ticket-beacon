@@ -54,7 +54,7 @@ function initAutoUpdater() {
       dialog.showMessageBox({
         type: 'info',
         title: 'Update available',
-        message: `Ticket Beacon ${info.version} is available. Download now?`,
+        message: `Beacon ${info.version} is available. Download now?`,
         buttons: ['Download', 'Later'],
       }).then(({ response }) => {
         if (response === 0) autoUpdater.downloadUpdate();
@@ -64,7 +64,7 @@ function initAutoUpdater() {
       dialog.showMessageBox({
         type: 'info',
         title: 'Update ready',
-        message: 'Update downloaded. Restart Ticket Beacon to apply it.',
+        message: 'Update downloaded. Restart Beacon to apply it.',
         buttons: ['Restart now', 'Later'],
       }).then(({ response }) => {
         if (response === 0) autoUpdater.quitAndInstall();
@@ -87,7 +87,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    title: 'Ticket Beacon',
+    title: 'Beacon',
     backgroundColor: '#04080f',
     show: false,
   });

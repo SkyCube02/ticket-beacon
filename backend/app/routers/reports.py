@@ -196,7 +196,7 @@ def export_pdf(
         return t
 
     # Cover
-    story.append(Paragraph("<b>Ticket Beacon</b>", styles["Title"]))
+    story.append(Paragraph("<b>Beacon</b>", styles["Title"]))
     story.append(Paragraph("SimBix LLP — Support Report", styles["Heading3"]))
     story.append(Paragraph(f"Generated: {data['generated_at']}", styles["Normal"]))
     story.append(Spacer(1, 0.5*cm))

@@ -12,6 +12,7 @@ pydantic-settings==2.8.1
 python-multipart==0.0.12
 apscheduler==3.10.4
 pyotp==2.9.0
+twilio>=9.0.0
 pandas==2.2.3
 reportlab==4.2.5
 pytest>=8.0.0

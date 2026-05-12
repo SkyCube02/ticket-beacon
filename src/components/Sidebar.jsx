@@ -7,6 +7,7 @@ const SIDEBAR_W = 220;
 const RAIL_W = 52;
 
 const NAV = [
+  { label: 'Dashboard',      view: 'dashboard',     icon: '⌂', minRole: null },
   { label: 'Tickets',        view: 'tickets',       icon: '◈', minRole: null },
   { label: 'Knowledge Base', view: 'kb',             icon: '≡', minRole: null },
   { label: 'Announcements',  view: 'announcements',  icon: '◎', minRole: null },
@@ -16,7 +17,7 @@ const NAV = [
   { label: 'Settings',       view: 'settings',       icon: '◧', minRole: null },
 ];
 
-export default function Sidebar({ tickets, onNewTicket, user, onLogout, view, onViewChange, hasSecurityAlert }) {
+export default function Sidebar({ tickets, onNewTicket, user, onLogout, view, onViewChange, hasSecurityAlert, activeTicket, onOpenActiveTicket }) {
   const [showChangePw, setShowChangePw] = useState(false);
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('tb_sidebar_collapsed') === '1'
@@ -59,7 +60,7 @@ export default function Sidebar({ tickets, onNewTicket, user, onLogout, view, on
         {!collapsed && (
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text, letterSpacing: -0.3, whiteSpace: 'nowrap' }}>
-              <span style={{ color: C.accent }}>●</span> Ticket Beacon
+              <span style={{ color: C.accent }}>●</span> Beacon
             </div>
             <div style={{ fontSize: 10, color: C.muted, marginTop: 2, letterSpacing: 0.5 }}>SUPPORT PORTAL</div>
           </div>
@@ -183,6 +184,39 @@ export default function Sidebar({ tickets, onNewTicket, user, onLogout, view, on
           );
         })}
       </nav>
+
+      {/* Active ticket */}
+      {activeTicket && (
+        <div
+          onClick={onOpenActiveTicket}
+          title={collapsed ? `Active: ${activeTicket.ticket_number}` : undefined}
+          style={{
+            margin: collapsed ? '8px 6px' : '8px 8px',
+            padding: collapsed ? '8px 0' : '10px 12px',
+            background: '#0d1f0d',
+            border: '1px solid #166534',
+            borderRadius: 7,
+            cursor: 'pointer',
+            textAlign: collapsed ? 'center' : 'left',
+          }}
+        >
+          {collapsed ? (
+            <span style={{ fontSize: 14, color: '#4ade80' }}>◉</span>
+          ) : (
+            <>
+              <div style={{ fontSize: 9, fontWeight: 700, color: '#4ade80', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 4 }}>
+                ◉ Active Ticket
+              </div>
+              <div style={{ fontSize: 11, color: '#f0fdf4', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {activeTicket.ticket_number} · {activeTicket.title}
+              </div>
+              <div style={{ fontSize: 10, color: '#86efac', marginTop: 3 }}>
+                {activeTicket.priority} · {activeTicket.status}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* User footer */}
       <div style={{

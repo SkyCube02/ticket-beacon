@@ -61,7 +61,7 @@ export default function ActivatePage({ token, onDone }) {
     <div style={{ height: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, width: 400, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.6)' }}>
         <div style={{ background: C.accentDim, borderBottom: `1px solid ${C.accent}44`, padding: '20px 24px' }}>
-          <div style={{ fontSize: 11, color: C.accentLight, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase' }}>SimBix LLP — Ticket Beacon</div>
+          <div style={{ fontSize: 11, color: C.accentLight, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase' }}>SimBix LLP — Beacon</div>
           <div style={{ fontSize: 19, fontWeight: 700, color: C.text, marginTop: 4 }}>
             <span style={{ color: C.accent }}>●</span> Activate your account
           </div>
