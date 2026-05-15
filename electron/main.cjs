@@ -1,7 +1,12 @@
-const { app, BrowserWindow, ipcMain, Notification, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification, Menu, globalShortcut, shell, dialog } = require('electron');
 const path = require('path');
 
 const isDev = !app.isPackaged;
+
+// Required on Windows so notifications appear under the correct app name in the Action Centre
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.simbix.ticketbeacon');
+}
 
 // ── Emergency contact cache (in-memory, persisted via renderer localStorage) ──
 // Removed better-sqlite3 dependency — localStorage handles persistence in renderer
@@ -37,6 +42,8 @@ function initAutoUpdater() {
   }
 }
 
+const WIN_ICON = path.join(__dirname, '../public/icons/icon-192.png');
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -49,14 +56,26 @@ function createWindow() {
       nodeIntegration: false,
     },
     title: 'Beacon',
+    icon: WIN_ICON,
     backgroundColor: '#04080f',
     show: false,
   });
 
+  // Remove the default Electron menu entirely
+  Menu.setApplicationMenu(null);
+
   if (isDev) {
     win.loadURL('http://localhost:5173');
+    // F12 opens DevTools in dev mode
+    globalShortcut.register('F12', () => {
+      if (win.webContents.isDevToolsOpened()) {
+        win.webContents.closeDevTools();
+      } else {
+        win.webContents.openDevTools();
+      }
+    });
   } else {
-    win.loadURL('https://ticket-beacon.vercel.app');
+    win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
   win.once('ready-to-show', () => {
@@ -68,12 +87,15 @@ function createWindow() {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    // Allow Microsoft login popups for MSAL
     if (url === 'about:blank' || url.startsWith('https://login.microsoftonline.com') || url.startsWith('https://login.live.com')) {
       return { action: 'allow' };
     }
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  win.on('closed', () => {
+    globalShortcut.unregisterAll();
   });
 }
 
@@ -89,9 +111,20 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+// public/ is available in dev; Vite copies it into dist/ for production builds
+const ICON_PATH = isDev
+  ? path.join(__dirname, '../public/icons/icon-192.png')
+  : path.join(__dirname, '../dist/icons/icon-192.png');
+
 ipcMain.handle('show-notification', (_event, { title, body }) => {
   if (Notification.isSupported()) {
-    const n = new Notification({ title, body, urgency: 'critical' });
+    const n = new Notification({
+      title,
+      body,
+      icon: ICON_PATH,
+      urgency: 'critical',   // Linux only — ignored on Windows/macOS
+      timeoutType: 'never',  // Keep visible until dismissed (Windows/macOS)
+    });
     n.show();
   }
 });

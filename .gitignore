@@ -41,3 +41,6 @@ android/build/
 # Env files (keep example, ignore actual)
 .env.production
 .env.local
+
+# SQLite test databases
+*.db

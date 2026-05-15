@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { C } from '../constants/theme.js';
+import { C, THEMES } from '../constants/theme.js';
+import { canNotify, notifyPermission, requestPermission } from '../utils/notifications.js';
 import { api } from '../utils/api.js';
 import { savePrefs } from '../utils/preferences.js';
 import { useToast } from '../utils/toast.jsx';
@@ -76,8 +77,9 @@ function Select({ value, onChange, options }) {
   );
 }
 
-export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
+export default function Settings({ user, prefs, onPrefsChange, onUserUpdate, onThemeChange }) {
   const toast = useToast();
+  const [notifPerm, setNotifPerm] = useState(() => notifyPermission());
   const [fullName, setFullName] = useState(user.full_name);
   const [phoneNumber, setPhoneNumber] = useState(user.phone_number || '');
   const [savingName, setSavingName] = useState(false);
@@ -85,11 +87,14 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
   const [teamsWebhook, setTeamsWebhook] = useState(localStorage.getItem('tb_teams_webhook') || '');
   const [testingTeams, setTestingTeams] = useState(false);
   const [mfaEnabled, setMfaEnabled] = useState(user.mfa_enabled ?? false);
-  const [mfaSetup, setMfaSetup] = useState(null); // {uri, secret}
+  const [mfaSetup, setMfaSetup] = useState(null);
   const [mfaCode, setMfaCode] = useState('');
   const [mfaLoading, setMfaLoading] = useState(false);
   const [mfaDisableCode, setMfaDisableCode] = useState('');
   const [showDisable, setShowDisable] = useState(false);
+  const [bio, setBio] = useState(user.profile_bio || '');
+  const [chatStatus, setChatStatus] = useState(user.profile_status || 'online');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   function setPref(key, value) {
     const updated = { ...prefs, [key]: value };
@@ -151,8 +156,44 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
         Settings
       </div>
 
+      {/* Agent profile */}
+      <Section title="Profile" description="Visible to other agents in the Chat section">
+        <Row label="Display name" description="Shown in chat and ticket activity">
+          <span style={{ fontSize: 13, color: C.muted }}>{user.full_name}</span>
+        </Row>
+        <Row label="Status" description="Your availability shown to other agents">
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[['online','#4ade80','Online'],['away','#fbbf24','Away'],['busy','#ef4444','Busy'],['offline','#6b7280','Offline']].map(([s, color, label]) => (
+              <button key={s} onClick={() => setChatStatus(s)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, cursor: 'pointer', background: chatStatus === s ? `${color}20` : 'transparent', border: `1px solid ${chatStatus === s ? color : C.border}`, color: chatStatus === s ? color : C.muted, fontSize: 11, fontWeight: chatStatus === s ? 600 : 400 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </Row>
+        <Row label="Bio" description="A short line visible next to your name in chat">
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={bio} onChange={e => setBio(e.target.value)} placeholder="e.g. Senior agent — networking & M365" style={{ ...inputStyle, width: 240 }} />
+            <button
+              onClick={async () => {
+                setSavingProfile(true);
+                try {
+                  await api.chatUpdateProfile(chatStatus, bio);
+                  toast('Profile saved', 'success');
+                } catch (e) { toast(e.message, 'error'); }
+                finally { setSavingProfile(false); }
+              }}
+              disabled={savingProfile}
+              style={{ padding: '6px 14px', background: C.accent, border: 'none', borderRadius: 6, color: C.white, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              {savingProfile ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </Row>
+      </Section>
+
       {/* Account */}
-      <Section title="Account" description="Your profile and login details">
+      <Section title="Account" description="Your login details and contact info">
         <Row label="Display name" description="Shown to other agents in the portal">
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input
@@ -225,11 +266,43 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
         <Row label="P1/P2 sound alerts" description="Play an audio alert when a critical ticket comes in">
           <Toggle value={prefs.soundAlerts} onChange={v => setPref('soundAlerts', v)} />
         </Row>
-        {isElectron && (
-          <Row label="Desktop notifications" description="Show OS-level notifications when the window is minimised">
-            <Toggle value={prefs.desktopNotifications} onChange={v => setPref('desktopNotifications', v)} />
-          </Row>
-        )}
+        <Row
+          label="Desktop notifications"
+          description={
+            notifPerm === 'granted' ? 'OS notifications are enabled — you\'ll receive alerts when the window is minimised'
+            : notifPerm === 'denied' ? 'Blocked in browser — allow Beacon in your browser\'s site settings, then reload'
+            : 'Allow Beacon to send OS-level pop-ups for P1/P2 alerts and security announcements'
+          }
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {notifPerm === 'granted' && (
+              <Toggle value={prefs.desktopNotifications !== false} onChange={v => setPref('desktopNotifications', v)} />
+            )}
+            {notifPerm === 'default' && canNotify() && (
+              <button
+                onClick={async () => {
+                  const granted = await requestPermission();
+                  setNotifPerm(granted ? 'granted' : 'denied');
+                  if (granted) {
+                    setPref('desktopNotifications', true);
+                    toast('Desktop notifications enabled', 'success');
+                  } else {
+                    toast('Permission denied — allow in browser settings', 'error');
+                  }
+                }}
+                style={{ padding: '6px 14px', background: C.accent, border: 'none', borderRadius: 6, color: C.white, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Enable notifications
+              </button>
+            )}
+            {notifPerm === 'denied' && (
+              <span style={{ fontSize: 11, color: '#f87171', fontWeight: 600 }}>Blocked</span>
+            )}
+            {notifPerm === 'unsupported' && (
+              <span style={{ fontSize: 11, color: C.muted }}>Not supported in this browser</span>
+            )}
+          </div>
+        </Row>
         <Row label="Announcement alerts" description="Toast notification when a new announcement is posted">
           <Toggle value={prefs.announcementAlerts} onChange={v => setPref('announcementAlerts', v)} />
         </Row>
@@ -237,11 +310,40 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
 
       {/* Display */}
       <Section title="Display" description="Appearance and layout preferences">
+        <Row label="Theme" description="Choose a colour scheme for the interface">
+          <div style={{ display: 'flex', gap: 8 }}>
+            {Object.entries(THEMES).map(([key, theme]) => {
+              const active = (localStorage.getItem('tb_theme') || 'neon') === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => onThemeChange?.(key)}
+                  title={theme.description}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                    padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
+                    background: active ? C.accentDim : C.card,
+                    border: `1px solid ${active ? C.accent : C.border}`,
+                    color: active ? C.accentLight : C.muted, fontSize: 11, fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: theme.bg, border: `1px solid ${theme.border}` }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: theme.accent }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: theme.text, opacity: 0.6 }} />
+                  </div>
+                  {theme.name}
+                </button>
+              );
+            })}
+          </div>
+        </Row>
         <Row label="Default view" description="Which screen to open on login">
           <Select
-            value={prefs.defaultView}
+            value={prefs.defaultView || 'dashboard'}
             onChange={v => setPref('defaultView', v)}
             options={[
+              { value: 'dashboard', label: 'Dashboard' },
               { value: 'tickets', label: 'Tickets' },
               { value: 'kb', label: 'Knowledge Base' },
               { value: 'announcements', label: 'Announcements' },
@@ -371,6 +473,23 @@ export default function Settings({ user, prefs, onPrefsChange, onUserUpdate }) {
             placeholder="https://app.realvnc.com/connect"
             style={{ ...inputStyle, width: 280, fontSize: 11, fontFamily: 'monospace' }}
           />
+        </Row>
+      </Section>
+
+      {/* Calendar */}
+      <Section title="Calendar" description="Sync meetings from Outlook or Teams calendar">
+        <Row label="Outlook iCal URL" description="In Outlook: Settings → View all Outlook settings → Calendar → Shared calendars → Publish a calendar. Paste the ICS link here.">
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              defaultValue={localStorage.getItem('tb_ical_url') || ''}
+              onBlur={e => {
+                localStorage.setItem('tb_ical_url', e.target.value.trim());
+                toast('iCal URL saved', 'success');
+              }}
+              placeholder="https://outlook.live.com/owa/calendar/…/calendar.ics"
+              style={{ ...inputStyle, width: 300, fontSize: 11, fontFamily: 'monospace' }}
+            />
+          </div>
         </Row>
       </Section>
 

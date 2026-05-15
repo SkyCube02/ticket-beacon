@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { C, P } from '../constants/theme.js';
+import { notify } from '../utils/notifications.js';
 
 function beep() {
   try {
@@ -36,13 +37,10 @@ export default function SlaAlertBanner({ tickets, onAcknowledge, soundEnabled = 
     if (alertTickets.length > 0 && alertTickets.length !== prevCount.current) {
       if (soundEnabled) beep();
 
-      if (desktopEnabled && window.electronAPI?.isElectron) {
+      if (desktopEnabled) {
         const newTickets = alertTickets.slice(prevCount.current);
         newTickets.forEach(t => {
-          window.electronAPI.showNotification(
-            `⚠ ${t.priority} Alert — ${t.ticket_number}`,
-            t.title
-          );
+          notify(`⚠ ${t.priority} Alert — ${t.ticket_number}`, t.title);
         });
       }
     }

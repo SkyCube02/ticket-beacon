@@ -4,7 +4,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from .database import SessionLocal
 from . import models
 
-SLA_WINDOWS_S = {"P1": 120, "P2": 120, "P3": 1800, "P4": 1800, "P5": 1800}
+# Acknowledgement windows in seconds: P1=2min, P2=10min, P3/4/5=30min
+SLA_WINDOWS_S = {"P1": 120, "P2": 600, "P3": 1800, "P4": 1800, "P5": 1800}
 
 
 def _send_sla_sms(ticket):
@@ -31,18 +32,26 @@ def check_sla_breaches():
 
         for ticket in tickets:
             window = SLA_WINDOWS_S.get(ticket.priority, 1800)
-            elapsed = (now - ticket.created_at).total_seconds()
 
-            if elapsed > window:
+            if ticket.acknowledged_at:
+                # Already acknowledged — breach only if acknowledgement itself was late
+                ack_elapsed = (ticket.acknowledged_at - ticket.created_at).total_seconds()
+                breached_late = ack_elapsed > window
+            else:
+                # Not yet acknowledged — breach if past the deadline now
+                elapsed = (now - ticket.created_at).total_seconds()
+                breached_late = elapsed > window
+
+            if breached_late:
                 ticket.sla_breached = True
-                if ticket.status not in ("ESCALATED",):
+                if not ticket.acknowledged_at and ticket.status not in ("ESCALATED",):
                     ticket.status = "SLA BREACHED"
                 ticket.updated_at = now
 
                 log = models.AuditLog(
                     ticket_id=ticket.id,
                     actor_label="System",
-                    action=f"SLA breach — {ticket.priority} window of {window // 60}m exceeded",
+                    action=f"SLA breach — {ticket.priority} acknowledgement window of {window // 60}m exceeded",
                 )
                 db.add(log)
 

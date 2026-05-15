@@ -1,4 +1,5 @@
-export const SLA_WINDOWS_S = { P1: 120, P2: 120, P3: 1800, P4: 1800, P5: 1800 };
+// Acknowledgement windows in seconds: P1=2min, P2=10min, P3/4/5=30min
+export const SLA_WINDOWS_S = { P1: 120, P2: 600, P3: 1800, P4: 1800, P5: 1800 };
 const TERMINAL = new Set(['RESOLVED', 'CLOSED', 'CANCELLED']);
 
 export function getSLADeadlineMs(ticket) {

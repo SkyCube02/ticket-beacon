@@ -71,6 +71,8 @@ def _user_out(user: models.User) -> dict:
         "mfa_restricted": user.mfa_restricted,
         "mfa_reenrol_deadline": user.mfa_reenrol_deadline.isoformat() if user.mfa_reenrol_deadline else None,
         "phone_number": user.phone_number,
+        "profile_bio": user.profile_bio,
+        "profile_status": user.profile_status or "online",
         "company_name": company.name if company else None,
         "company_id": company.id if company else None,
     }

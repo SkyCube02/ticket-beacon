@@ -78,6 +78,8 @@ class User(Base):
     mfa_reminded_12h = Column(Boolean, default=False)
     mfa_reminded_22h = Column(Boolean, default=False)
     phone_number = Column(String, nullable=True)
+    profile_bio = Column(Text, nullable=True)
+    profile_status = Column(String, default="online")  # online | away | busy | offline
     created_at = Column(DateTime(timezone=True), default=now_utc)
 
     assigned_tickets = relationship("Ticket", back_populates="assignee", foreign_keys="Ticket.assignee_id")
@@ -184,7 +186,8 @@ class Attachment(Base):
     file_name = Column(String, nullable=False)
     file_type = Column(String, nullable=False)
     file_size_bytes = Column(Integer, nullable=False)
-    file_data = Column(LargeBinary, nullable=False)
+    file_data = Column(LargeBinary, nullable=True)   # null when stored in blob
+    blob_url = Column(String, nullable=True)          # set when stored in Azure Blob
     uploaded_by_id = Column(String, ForeignKey("users.id"), nullable=True)
     uploaded_at = Column(DateTime(timezone=True), default=now_utc)
 
@@ -275,6 +278,54 @@ class KBEditRequest(Base):
     created_at = Column(DateTime(timezone=True), default=now_utc)
 
     article = relationship("KBArticle")
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(String, primary_key=True, default=new_uuid)
+    sender_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    recipient_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+    sender = relationship("User", foreign_keys=[sender_id])
+    recipient = relationship("User", foreign_keys=[recipient_id])
+
+
+class WorkSession(Base):
+    __tablename__ = "work_sessions"
+
+    id = Column(String, primary_key=True, default=new_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    date = Column(String, nullable=False)  # YYYY-MM-DD
+    clock_in = Column(DateTime(timezone=True), nullable=False)
+    clock_out = Column(DateTime(timezone=True), nullable=True)
+    # [{"start": iso, "end": iso | null}]
+    breaks = Column(JSON, default=list)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class CalendarMeeting(Base):
+    __tablename__ = "calendar_meetings"
+
+    id = Column(String, primary_key=True, default=new_uuid)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    start_time = Column(DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=False)
+    attendee_ids = Column(JSON, default=list)
+    teams_link = Column(String, nullable=True)
+    created_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    source = Column(String, default="internal")  # internal | outlook
+    external_uid = Column(String, nullable=True, unique=True)  # dedup iCal imports
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+
+    created_by = relationship("User", foreign_keys=[created_by_id])
 
 
 class AuditLog(Base):

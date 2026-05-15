@@ -1,6 +1,15 @@
 import { mockApi } from './mockApi.js';
 const DEMO = import.meta.env.VITE_DEMO_MODE === 'true';
-const BASE = (import.meta.env.VITE_API_URL || '') + '/api';
+
+function resolveBase() {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL + '/api';
+  // Packaged Electron loads from file:// — no Vite proxy, so hit the backend directly
+  if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+    return 'http://localhost:8000/api';
+  }
+  return '/api'; // browser / Electron dev — Vite proxy forwards to localhost:8000
+}
+const BASE = resolveBase();
 
 function getToken() {
   return localStorage.getItem('tb_token');
@@ -229,6 +238,34 @@ const _realApi = {
 
   // Integrations
   teamsNotify: (webhook_url, payload) => req('POST', '/integrations/teams-notify', { webhook_url, payload }),
+
+  // Agent chat
+  chatAgents: () => req('GET', '/chat/agents'),
+  chatUnread: () => req('GET', '/chat/unread-count'),
+  chatMessages: (agentId) => req('GET', `/chat/messages/${agentId}`),
+  chatSend: (agentId, content) => req('POST', `/chat/messages/${agentId}`, { content }),
+  chatUpdateProfile: (profile_status, profile_bio) => req('PATCH', '/chat/profile', { profile_status, profile_bio }),
+
+  // Calendar & work tracker
+  getBankHolidays: () => req('GET', '/calendar/bank-holidays'),
+  clockStatus: () => req('GET', '/calendar/clock/status'),
+  clockIn: () => req('POST', '/calendar/clock/in'),
+  clockOut: () => req('POST', '/calendar/clock/out'),
+  breakStart: () => req('POST', '/calendar/clock/break/start'),
+  breakEnd: () => req('POST', '/calendar/clock/break/end'),
+  clockHistory: (start, end, userId) => {
+    const qs = new URLSearchParams({ start, end });
+    if (userId) qs.set('user_id', userId);
+    return req('GET', `/calendar/clock/history?${qs}`);
+  },
+  teamClock: (date) => req('GET', `/calendar/clock/team?date=${date}`),
+  teamClockRange: (start, end) => req('GET', `/calendar/clock/team/range?start=${start}&end=${end}`),
+  listMeetings: (start, end) => req('GET', `/calendar/meetings?start=${start}&end=${end}`),
+  createMeeting: (body) => req('POST', '/calendar/meetings', body),
+  deleteMeeting: (id) => req('DELETE', `/calendar/meetings/${id}`),
+  syncIcal: (url) => req('POST', '/calendar/meetings/sync-ical', { url }),
+  calendarTicketEvents: (start, end) => req('GET', `/calendar/ticket-events?start=${start}&end=${end}`),
+  calendarTaskEvents: (start, end) => req('GET', `/calendar/task-events?start=${start}&end=${end}`),
 
   // Claude proxy (same callClaude shape)
   claude: (system, user, model = 'claude-sonnet-4-6') =>

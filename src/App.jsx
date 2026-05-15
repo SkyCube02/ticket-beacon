@@ -37,7 +37,11 @@ import OnboardingWizard from './components/OnboardingWizard.jsx';
 import ActivatePage from './components/ActivatePage.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import ActiveTicketPanel from './components/ActiveTicketPanel.jsx';
+import ActiveTicketView from './components/ActiveTicketView.jsx';
+import Calendar from './components/Calendar.jsx';
+import Chat from './components/Chat.jsx';
 import { loadPrefs } from './utils/preferences.js';
+import { notify, requestPermission } from './utils/notifications.js';
 
 const CLIENT_ROLES = ['CLIENT_USER', 'CLIENT_MANAGER'];
 
@@ -174,6 +178,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [activeTicketId, setActiveTicketId] = useState(() => localStorage.getItem('tb_active_ticket') || null);
   const [showActivePanel, setShowActivePanel] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
   const [themeKey, setThemeKey] = useState(0);
 
   function pinActiveTicket(id) {
@@ -214,17 +219,26 @@ export default function App() {
     const loaded = loadPrefs(user.id);
     setPrefs(loaded);
     setView(loaded.defaultView || 'dashboard');
-    fetchTickets();
     api.listAgents().then(setAgents).catch(() => {});
     api.listCompanies().then(setCompanies).catch(() => {});
     api.listAnnouncements().then(data => {
       setHasSecurityAlert(data.some(a => a.category === 'SECURITY' && a.is_pinned));
       if (data.length > 0) latestAnnouncementAt.current = data[0].createdAt;
     }).catch(() => {});
-    // Show onboarding for first-time SYSTEM_ADMIN
+    requestPermission();
+    const chatPoll = setInterval(() => {
+      api.chatUnread().then(r => setChatUnread(r.count)).catch(() => {});
+    }, 15000);
+    api.chatUnread().then(r => setChatUnread(r.count)).catch(() => {});
     if (user.role === 'SYSTEM_ADMIN' && !localStorage.getItem(`tb_onboarded_${user.id}`)) {
       setShowOnboarding(true);
     }
+    return () => clearInterval(chatPoll);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchTickets();
   }, [user, fetchTickets]);
 
   // Session timeout — track inactivity
@@ -288,8 +302,8 @@ export default function App() {
             if (prefs.announcementAlerts !== false) {
               toast(`${isAlert ? '🔒 Security Alert' : '📢 Announcement'}: ${a.title}`, isAlert ? 'error' : 'info', isAlert ? 10000 : 6000);
             }
-            if (prefs.desktopNotifications !== false && window.electronAPI?.isElectron && isAlert) {
-              window.electronAPI.showNotification(`🔒 Security Alert`, a.title);
+            if (prefs.desktopNotifications !== false) {
+              notify(isAlert ? '🔒 Security Alert' : '📢 Announcement', a.title);
             }
           });
         }
@@ -412,15 +426,63 @@ export default function App() {
         user={user}
         onLogout={handleLogout}
         view={view}
-        onViewChange={setView}
+        onViewChange={v => { setView(v); if (v !== 'tickets' && v !== 'active-ticket' && v !== 'tickets-history') setSelectedId(null); }}
         hasSecurityAlert={hasSecurityAlert}
         activeTicket={tickets.find(t => t.id === activeTicketId) || null}
-        onOpenActiveTicket={() => setShowActivePanel(true)}
+        onOpenActiveTicket={() => setView('active-ticket')}
+        chatUnread={chatUnread}
       />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {view === 'dashboard' ? (
           <ViewWrap><Dashboard user={user} onNav={(v, id) => { setView(v); if (id) setSelectedId(id); }} /></ViewWrap>
+        ) : view === 'active-ticket' ? (
+          <ViewWrap><ActiveTicketView
+            ticket={tickets.find(t => t.id === activeTicketId) || null}
+            agents={agents}
+            currentUser={user}
+            onRefresh={updated => setTickets(prev => prev.map(t => t.id === updated.id ? updated : t))}
+            onLog={(actor, action, meta, isInternal) => handleAddLog(activeTicketId, actor, action, meta, isInternal)}
+            onUnpin={() => { pinActiveTicket(null); setView('tickets'); }}
+          /></ViewWrap>
+        ) : view === 'tickets-history' ? (
+          <ViewWrap>
+            <TicketList
+              tickets={filtered.filter(t => ['RESOLVED','CLOSED','CANCELLED'].includes(t.status))}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              search={search}
+              onSearch={setSearch}
+              onNewTicket={() => setShowNew(true)}
+              hasDetail={!!selectedTicket}
+              loading={loadingTickets}
+              companies={companies}
+              companyFilter={companyFilter}
+              onCompanyFilter={id => { setCompanyFilter(id); setSelectedId(null); }}
+              statusFilter={statusFilter}
+              onStatusFilter={v => { setStatusFilter(v); setSelectedId(null); }}
+              density={prefs.density || 'comfortable'}
+              currentUser={user}
+              onQuickAction={(id, changes) => handleUpdateTicket(id, changes)}
+            />
+            {selectedTicket && (
+              <TicketDetail
+                ticket={selectedTicket}
+                agents={agents}
+                currentUser={user}
+                onClose={() => setSelectedId(null)}
+                onUpdate={changes => handleUpdateTicket(selectedTicket.id, changes)}
+                onRefresh={updated => setTickets(prev => prev.map(t => t.id === updated.id ? updated : t))}
+                onLog={(actor, action, meta, isInternal) => handleAddLog(selectedTicket.id, actor, action, meta, isInternal)}
+                isActive={activeTicketId === selectedTicket?.id}
+                onSetActive={() => pinActiveTicket(activeTicketId === selectedTicket?.id ? null : selectedTicket?.id)}
+              />
+            )}
+          </ViewWrap>
+        ) : view === 'chat' ? (
+          <ViewWrap><Chat currentUser={user} /></ViewWrap>
+        ) : view === 'calendar' ? (
+          <ViewWrap><Calendar currentUser={user} /></ViewWrap>
         ) : view === 'kb' ? (
           <ViewWrap><KnowledgeBase currentUser={user} /></ViewWrap>
         ) : view === 'reports' ? (

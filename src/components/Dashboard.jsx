@@ -158,7 +158,7 @@ function AgentDashboard({ user, onNav }) {
             </div>
             <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 4 }}>{latestAnnouncement.title}</div>
             <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-              {latestAnnouncement.body}
+              {latestAnnouncement.content}
             </div>
           </Widget>
         )}
@@ -168,21 +168,29 @@ function AgentDashboard({ user, onNav }) {
       {isManager && report && (
         <>
           <Widget title="SLA Compliance" icon="▦" nav="reports" onNav={onNav}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <StatCard label="Compliance rate" value={`${report.sla_compliance_rate ?? 0}%`} color={report.sla_compliance_rate >= 80 ? '#4ade80' : '#f87171'} onClick={() => onNav('reports')} />
-              <StatCard label="Avg resolution" value={report.avg_resolution_hours != null ? `${report.avg_resolution_hours}h` : '—'} onClick={() => onNav('reports')} />
-            </div>
+            {(() => {
+              const vals = Object.values(report.sla_compliance || {}).filter(v => v != null);
+              const rate = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+              const resVals = Object.values(report.avg_resolution_hours || {}).filter(v => v != null);
+              const avgRes = resVals.length ? (resVals.reduce((a, b) => a + b, 0) / resVals.length).toFixed(1) : null;
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <StatCard label="Compliance rate" value={`${rate}%`} color={rate >= 80 ? '#4ade80' : '#f87171'} onClick={() => onNav('reports')} />
+                  <StatCard label="Avg resolution" value={avgRes != null ? `${avgRes}h` : '—'} onClick={() => onNav('reports')} />
+                </div>
+              );
+            })()}
           </Widget>
 
           <Widget title="Team Load" icon="◉" nav="reports" onNav={onNav} span={2}>
-            {(report.agents || []).slice(0, 5).map(a => (
+            {(report.agent_stats || []).slice(0, 5).map(a => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: `1px solid ${C.border}` }}>
                 <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.accentDim, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: C.accentLight, flexShrink: 0 }}>
-                  {a.full_name?.[0]?.toUpperCase()}
+                  {a.name?.[0]?.toUpperCase()}
                 </div>
-                <span style={{ flex: 1, fontSize: 12, color: C.text }}>{a.full_name}</span>
-                <span style={{ fontSize: 11, color: C.muted }}>{a.open_tickets ?? 0} open</span>
-                <span style={{ fontSize: 11, color: a.sla_breached > 0 ? '#f87171' : C.dim }}>{a.sla_breached ?? 0} breached</span>
+                <span style={{ flex: 1, fontSize: 12, color: C.text }}>{a.name}</span>
+                <span style={{ fontSize: 11, color: C.muted }}>{a.assigned ?? 0} assigned</span>
+                <span style={{ fontSize: 11, color: C.dim }}>{a.resolved ?? 0} resolved</span>
               </div>
             ))}
           </Widget>

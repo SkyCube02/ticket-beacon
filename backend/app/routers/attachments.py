@@ -3,7 +3,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth import get_current_user
-from .. import models
+from .. import models, storage
 
 router = APIRouter(prefix="/api/attachments", tags=["attachments"])
 
@@ -35,10 +35,9 @@ async def upload_attachment(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    # Validate type
     ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=422, detail=f"File type not allowed. Accepted: PNG, JPG, PDF, DOCX")
+        raise HTTPException(status_code=422, detail="File type not allowed. Accepted: PNG, JPG, PDF, DOCX")
 
     file_type = ALLOWED_TYPES.get(file.content_type) or ext.lstrip(".").upper()
     if file_type not in ("PNG", "JPG", "PDF", "DOCX"):
@@ -48,12 +47,21 @@ async def upload_attachment(
     if len(data) > MAX_SIZE:
         raise HTTPException(status_code=422, detail="File exceeds 5MB limit")
 
+    blob_url = None
+    file_data = None
+    if storage.is_configured():
+        mime = MIME_MAP.get(file_type, "application/octet-stream")
+        blob_url = storage.upload(data, file.filename, mime)
+    else:
+        file_data = data
+
     attachment = models.Attachment(
         ticket_id=ticket_id,
         file_name=file.filename,
         file_type=file_type,
         file_size_bytes=len(data),
-        file_data=data,
+        file_data=file_data,
+        blob_url=blob_url,
         uploaded_by_id=current_user.id,
     )
     db.add(attachment)
@@ -88,9 +96,19 @@ def download_attachment(
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
+    if attachment.blob_url:
+        try:
+            content = storage.download(attachment.blob_url)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Blob download failed: {exc}")
+    elif attachment.file_data:
+        content = attachment.file_data
+    else:
+        raise HTTPException(status_code=404, detail="Attachment data not found")
+
     mime = MIME_MAP.get(attachment.file_type, "application/octet-stream")
     return Response(
-        content=attachment.file_data,
+        content=content,
         media_type=mime,
         headers={"Content-Disposition": f'attachment; filename="{attachment.file_name}"'},
     )
@@ -105,6 +123,9 @@ def delete_attachment(
     attachment = db.query(models.Attachment).filter(models.Attachment.id == attachment_id).first()
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
+
+    if attachment.blob_url:
+        storage.delete(attachment.blob_url)
 
     log = models.AuditLog(
         ticket_id=attachment.ticket_id,

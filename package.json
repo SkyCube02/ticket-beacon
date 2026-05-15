@@ -9,7 +9,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k -n VITE,ELECTRON -c cyan,yellow \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "concurrently -k -n BACKEND,VITE,ELECTRON -c green,cyan,yellow \"cd backend && .venv\\Scripts\\python -m uvicorn app.main:app --reload\" \"vite\" \"wait-on http://localhost:5173 http-get://localhost:8000/api/health && electron .\"",
     "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
@@ -45,8 +45,12 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "electron/main.cjs",
+      "electron/preload.cjs",
       "package.json"
+    ],
+    "asarUnpack": [
+      "dist/icons/**"
     ],
     "win": {
       "target": [

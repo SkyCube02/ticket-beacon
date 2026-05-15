@@ -11,7 +11,8 @@ from .. import models
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 MANAGER_ROLES = ("TEAM_MANAGER", "SYSTEM_ADMIN")
-SLA_WINDOWS_S = {"P1": 120, "P2": 120, "P3": 1800, "P4": 1800, "P5": 1800}
+# Acknowledgement windows in seconds: P1=2min, P2=10min, P3/4/5=30min
+SLA_WINDOWS_S = {"P1": 120, "P2": 600, "P3": 1800, "P4": 1800, "P5": 1800}
 
 
 def _build_summary(db: Session) -> dict:
