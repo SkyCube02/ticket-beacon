@@ -150,8 +150,8 @@ class CreateTicketBody(BaseModel):
     description: str = ""
     priority: str = "P3"
     priority_justification: Optional[str] = None
-    requester_name: str
-    requester_email: str
+    requester_name: str = ""
+    requester_email: str = ""
     requester_dept: str = ""
     company_id: Optional[str] = None
     assignee_id: Optional[str] = None
