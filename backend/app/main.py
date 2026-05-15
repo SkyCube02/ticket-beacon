@@ -14,23 +14,62 @@ models.Base.metadata.create_all(bind=engine)
 def _run_migrations():
     from sqlalchemy import text, inspect as sa_inspect
     insp = sa_inspect(engine)
+
+    def add_col(conn, table, col, definition):
+        cols = [c['name'] for c in insp.get_columns(table)]
+        if col not in cols:
+            conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {definition}'))
+            print(f'[migration] added {table}.{col}', flush=True)
+
     with engine.begin() as conn:
-        cols = [c['name'] for c in insp.get_columns('attachments')]
-        if 'blob_url' not in cols:
-            conn.execute(text('ALTER TABLE attachments ADD COLUMN blob_url VARCHAR'))
-            print('[migration] added attachments.blob_url', flush=True)
+        # users
+        add_col(conn, 'users', 'phone_number',         'VARCHAR')
+        add_col(conn, 'users', 'invited_by_id',        'VARCHAR')
+        add_col(conn, 'users', 'totp_secret',          'VARCHAR')
+        add_col(conn, 'users', 'mfa_enabled',          'BOOLEAN DEFAULT FALSE')
+        add_col(conn, 'users', 'mfa_restricted',       'BOOLEAN DEFAULT FALSE')
+        add_col(conn, 'users', 'mfa_reenrol_deadline', 'TIMESTAMPTZ')
+        add_col(conn, 'users', 'mfa_reminded_12h',     'BOOLEAN DEFAULT FALSE')
+        add_col(conn, 'users', 'mfa_reminded_22h',     'BOOLEAN DEFAULT FALSE')
+        add_col(conn, 'users', 'profile_bio',          'TEXT')
+        add_col(conn, 'users', 'profile_status',       "VARCHAR DEFAULT 'online'")
+        add_col(conn, 'users', 'is_activated',         'BOOLEAN DEFAULT TRUE')
 
-        # work_sessions and calendar_meetings are created by create_all above,
-        # but add external_uid unique index if missing (safe re-run)
-        # Profile columns on users
-        user_cols = [c['name'] for c in insp.get_columns('users')]
-        if 'profile_bio' not in user_cols:
-            conn.execute(text('ALTER TABLE users ADD COLUMN profile_bio TEXT'))
-            print('[migration] added users.profile_bio', flush=True)
-        if 'profile_status' not in user_cols:
-            conn.execute(text("ALTER TABLE users ADD COLUMN profile_status VARCHAR DEFAULT 'online'"))
-            print('[migration] added users.profile_status', flush=True)
+        # companies
+        add_col(conn, 'companies', 'priority_tier',         'INTEGER DEFAULT 1')
+        add_col(conn, 'companies', 'phone',                 'VARCHAR')
+        add_col(conn, 'companies', 'website',               'VARCHAR')
+        add_col(conn, 'companies', 'address',               'TEXT')
+        add_col(conn, 'companies', 'contract_start',        'VARCHAR')
+        add_col(conn, 'companies', 'contract_end',          'VARCHAR')
+        add_col(conn, 'companies', 'sla_notes',             'TEXT')
+        add_col(conn, 'companies', 'escalation_contact',    'VARCHAR')
+        add_col(conn, 'companies', 'escalation_phone',      'VARCHAR')
+        add_col(conn, 'companies', 'escalation_email',      'VARCHAR')
+        add_col(conn, 'companies', 'notes',                 'TEXT')
 
+        # tickets
+        add_col(conn, 'tickets', 'requester_dept',              "VARCHAR DEFAULT ''")
+        add_col(conn, 'tickets', 'system_info',                 'JSONB')
+        add_col(conn, 'tickets', 'sla_breached',                'BOOLEAN DEFAULT FALSE')
+        add_col(conn, 'tickets', 'idempotency_key',             'VARCHAR')
+        add_col(conn, 'tickets', 'satisfaction_score',          'INTEGER')
+        add_col(conn, 'tickets', 'satisfaction_note',           'TEXT')
+        add_col(conn, 'tickets', 'priority_justification',      'TEXT')
+        add_col(conn, 'tickets', 'priority_pending_approval',   'BOOLEAN DEFAULT FALSE')
+        add_col(conn, 'tickets', 'acknowledged_at',             'TIMESTAMPTZ')
+        add_col(conn, 'tickets', 'resolved_at',                 'TIMESTAMPTZ')
+        add_col(conn, 'tickets', 'closed_at',                   'TIMESTAMPTZ')
+
+        # attachments
+        add_col(conn, 'attachments', 'blob_url',        'VARCHAR')
+        add_col(conn, 'attachments', 'uploaded_by_id',  'VARCHAR')
+
+        # audit_logs
+        add_col(conn, 'audit_logs', 'is_internal', 'BOOLEAN DEFAULT FALSE')
+        add_col(conn, 'audit_logs', 'actor_id',    'VARCHAR')
+
+        # calendar_meetings unique index
         tables = sa_inspect(engine).get_table_names()
         if 'calendar_meetings' in tables:
             idxs = [i['name'] for i in insp.get_indexes('calendar_meetings')]
@@ -78,6 +117,7 @@ app.add_middleware(
         "http://localhost:5173", "http://localhost:4173",
         "http://localhost", "https://localhost",
         "capacitor://localhost",
+        "https://ticket-beacon.vercel.app",
     ] + _extra_origins,
     allow_credentials=True,
     allow_methods=["*"],
